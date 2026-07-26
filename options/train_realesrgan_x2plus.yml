@@ -36,9 +36,9 @@ queue_size: 180
 # dataset and data loader settings
 datasets:
   train:
-    name: DF2K+OST
+    name: own_dataset
     type: RealESRGANDataset
-    dataroot_gt: datasets/DF2K
+    dataroot_gt: /content/drive/MyDrive/Research/dataset/train_high
     meta_info: datasets/DF2K/meta_info/meta_info_DF2Kmultiscale+OST_sub.txt
     io_backend:
       type: disk
@@ -100,7 +100,7 @@ network_d:
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/pretrained_models/RealESRNet_x2plus.pth
+  pretrain_network_g: weights/RealESRNet_x2plus.pth
   param_key_g: params_ema
   strict_load_g: true
   resume_state: ~
