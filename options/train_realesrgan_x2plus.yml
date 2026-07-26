@@ -39,6 +39,7 @@ datasets:
     name: own_dataset
     type: RealESRGANDataset
     dataroot_gt: /content/drive/MyDrive/Research/dataset/train_high/B
+    meta_info: datasets/DF2K/meta_info/meta_info_DF2Kmultiscale+OST_sub.txt
     io_backend:
       type: disk
 
