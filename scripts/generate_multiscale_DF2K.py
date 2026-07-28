@@ -20,7 +20,7 @@ def main(args):
         for idx, scale in enumerate(scale_list):
             print(f'\t{scale:.2f}')
             rlt = img.resize((int(width * scale), int(height * scale)), resample=Image.LANCZOS)
-            rlt.save(os.path.join(args.output, f'{basename}T{idx}.png'))
+            rlt.save(os.path.join(args.output, f'{basename}T{idx}.tif'))
 
         # save the smallest image which the shortest edge is 400
         if width < height:
