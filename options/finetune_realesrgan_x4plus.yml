@@ -39,7 +39,7 @@ datasets:
     name: dataset
     type: RealESRGANDataset
     dataroot_gt: dataset
-    meta_info: datasets/meta_infometa_info_imagesmultiscale.txt
+    meta_info: dataset/meta_infometa_info_imagesmultiscale.txt
     io_backend:
       type: disk
 
