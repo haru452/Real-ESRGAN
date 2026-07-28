@@ -61,7 +61,7 @@ datasets:
 
     final_sinc_prob: 0.8
 
-    gt_size: 128
+    gt_size: 256
     use_hflip: True
     use_rot: False
 
