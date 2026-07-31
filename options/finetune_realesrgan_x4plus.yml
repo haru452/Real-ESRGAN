@@ -3,7 +3,7 @@ name: finetune_RealESRGANx4plus_400k
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
-manual_seed: 0
+manual_seed: 1
 
 # ----------------- options for synthesizing training data in RealESRGANModel ----------------- #
 # USM the ground-truth
@@ -39,7 +39,7 @@ datasets:
     name: dataset
     type: RealESRGANDataset
     dataroot_gt: dataset
-    meta_info: dataset/meta_infometa_info_2imagesmultiscale.txt
+    meta_info: dataset/meta_infometa_info_imagesmultiscale.txt
     io_backend:
       type: disk
 
@@ -123,10 +123,10 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [70000]
+    milestones: [40000]
     gamma: 0.5
 
-  total_iter: 80000
+  total_iter: 50000
   warmup_iter: -1  # no warm up
 
   # losses
