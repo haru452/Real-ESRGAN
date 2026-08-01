@@ -5,6 +5,11 @@
 ## <div align="center"><b><a href="README.md">English</a> | <a href="README_CN.md">简体中文</a></b></div>
 
 <div align="center">
+  
+ python scripts/generate_multiscale_DF2K.py --input dataset/high3 --output dataset/low3
+
+python scripts/generate_meta_info.py --input dataset/high3 dataset/low3  --root dataset dataset --meta_info dataset/meta_infometa_info_3imagesmultiscale.txt 
+
 
 👀[**Demos**](#-demos-videos) **|** 🚩[**Updates**](#-updates) **|** ⚡[**Usage**](#-quick-inference) **|** 🏰[**Model Zoo**](docs/model_zoo.md) **|** 🔧[Install](#-dependencies-and-installation)  **|** 💻[Train](docs/Training.md) **|** ❓[FAQ](docs/FAQ.md) **|** 🎨[Contribution](docs/CONTRIBUTING.md)
 
