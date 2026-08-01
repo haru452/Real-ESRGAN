@@ -9,6 +9,8 @@
  python scripts/generate_multiscale_DF2K.py --input dataset/high3 --output dataset/low3
 
 python scripts/generate_meta_info.py --input dataset/high3 dataset/low3  --root dataset dataset --meta_info dataset/meta_infometa_info_3imagesmultiscale.txt 
+python realesrgan/train.py -opt options/finetune_realesrgan_x4plus.yml 
+
 
 
 👀[**Demos**](#-demos-videos) **|** 🚩[**Updates**](#-updates) **|** ⚡[**Usage**](#-quick-inference) **|** 🏰[**Model Zoo**](docs/model_zoo.md) **|** 🔧[Install](#-dependencies-and-installation)  **|** 💻[Train](docs/Training.md) **|** ❓[FAQ](docs/FAQ.md) **|** 🎨[Contribution](docs/CONTRIBUTING.md)
