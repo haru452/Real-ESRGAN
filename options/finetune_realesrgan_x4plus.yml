@@ -123,10 +123,10 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [130000]
+    milestones: [150000]
     gamma: 0.5
 
-  total_iter: 150000
+  total_iter: 170000
   warmup_iter: -1  # no warm up
 
   # losses
