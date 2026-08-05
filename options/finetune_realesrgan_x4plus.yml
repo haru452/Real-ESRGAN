@@ -39,7 +39,7 @@ datasets:
     name: dataset
     type: RealESRGANDataset
     dataroot_gt: dataset
-    meta_info: dataset/meta_infometa_info_imagesmultiscale.txt
+    meta_info: dataset/meta_infometa_info_5imagesmultiscale.txt
     io_backend:
       type: disk
 
@@ -123,10 +123,10 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [150000]
+    milestones: [130000]
     gamma: 0.5
 
-  total_iter: 170000
+  total_iter: 150000
   warmup_iter: -1  # no warm up
 
   # losses
