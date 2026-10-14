@@ -89,6 +89,7 @@ network_g:
   num_feat: 64
   num_block: 23
   num_grow_ch: 32
+  scale: 2      # x2用のRRDBNet構造にする
 
 network_d:
   type: UNetDiscriminatorSN
@@ -99,7 +100,7 @@ network_d:
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/pretrained_models/RealESRNet_x2plus.pth
+  pretrain_network_g: experiments/finetune_RealESRNetx2plus/models/net_g_latest.pth  # 1段階目(ESRNet x2)の学習結果
   param_key_g: params_ema
   strict_load_g: true
   pretrain_network_d: experiments/pretrained_models/RealESRGAN_x2plus_netD.pth
@@ -123,7 +124,7 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [50000]
+    milestones: [43000]
     gamma: 0.5
 
   total_iter: 50000
