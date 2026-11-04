@@ -70,14 +70,13 @@ datasets:
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
-  # Uncomment these for validation
-  # val:
-  #   name: validation
-  #   type: PairedImageDataset
-  #   dataroot_gt: path_to_gt
-  #   dataroot_lq: path_to_lq
-  #   io_backend:
-  #     type: disk
+  val:
+    name: validation
+    type: PairedImageDataset
+    dataroot_gt: dataset/val/gt
+    dataroot_lq: dataset/val/lq
+    io_backend:
+      type: disk
 
 # network structures
 network_g:
@@ -110,10 +109,10 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [50000]
+    milestones: [85000]
     gamma: 0.5
 
-  total_iter: 70000
+  total_iter: 100000
   warmup_iter: -1  # no warm up
 
   # losses
@@ -122,10 +121,21 @@ train:
     loss_weight: 1.0
     reduction: mean
   # perceptual loss (content and style losses)
-  
+
+# validation settings
+val:
+  val_freq: !!float 1e4
+  save_img: False
+
+  metrics:
+    psnr: # metric name
+      type: calculate_psnr
+      crop_border: 2
+      test_y_channel: false
+
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  save_checkpoint_freq: !!float 5e3
   use_tb_logger: true
   wandb:
     project: ~
