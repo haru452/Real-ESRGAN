@@ -76,20 +76,20 @@ python scripts/generate_val_lq.py --mode bicubic --scale 2
 | `--mode` | `degrade` | `degrade`（学習と同じ劣化）か `bicubic`（縮小のみ） |
 | `--seed` | `0` | 乱数の種 |
 
-共通のデータ配置（Colab 版の `train_realesrgan_x2plus.yml` 以外）:
+---
+
+## 使い方（学習の流れ）
+
+フォルダ構成（Colab 版の `train_realesrgan_x2plus.yml` 以外）:
 
 ```
 dataset/
 ├── (高解像度パッチ画像)
 ├── meta_infometa_info_imagesmultiscale.txt   # 学習画像の一覧
-└── val/                                       # x2 設定のみ使用
-    ├── gt/   # 検証用の高解像度画像
-    └── lq/   # 検証用の低解像度画像
+└── val/                                       # 検証用（x2 の設定ファイルだけが使う）
+    ├── gt/   # 検証用の高解像度画像（自分で置く）
+    └── lq/   # 検証用の低解像度画像（手順 3 で作る）
 ```
-
----
-
-## 使い方（学習の流れ）
 
 1. `createDataset.ipynb` を Colab で実行し、1024×1024 のパッチを作る
 2. パッチを `dataset/` に置き、画像一覧（meta_info）を作る
@@ -102,12 +102,26 @@ dataset/
      --check
    ```
 
-3. 本家の事前学習済み重みを `experiments/pretrained_models/` に置く（`RealESRNet_x4plus.pth`、`RealESRGAN_x4plus_netD.pth` など）
-4. 公式の重みから GAN をファインチューニングする
+3. （検証する場合）検証用の画像を作る
+   1. 学習に使っていないパッチを何枚か `dataset/val/gt/` に置く
+   2. 低解像度画像を作る（`dataset/val/lq/` に同じ名前で保存される）
+
+      ```bash
+      python scripts/generate_val_lq.py --opt options/finetune_realesrgan_x2plus.yml
+      ```
+
+   - `--opt` には、これから使う学習設定を指定する（倍率と劣化の強さがそこから決まる）
+   - 細かいオプションは上の「6. 検証用の低解像度画像を作るスクリプトを追加」を参照
+   - x4 の設定ファイル（`finetune_realesrgan_x4plus.yml`）は検証の設定がコメントアウトされているので、そのままならこの手順は不要。検証したいときは、そのファイルの `val:` の 2 か所（`datasets` の中と末尾）のコメントを外し、`dataroot_gt` を `dataset/val/gt`、`dataroot_lq` を `dataset/val/lq` にする
+
+4. 本家の事前学習済み重みを `experiments/pretrained_models/` に置く（`RealESRNet_x4plus.pth`、`RealESRGAN_x4plus_netD.pth` など）
+5. 公式の重みから GAN をファインチューニングする
 
    ```bash
    python realesrgan/train.py -opt options/finetune_realesrgan_x4plus.yml
    ```
+
+6. できた重みで推論する（下の「推論（超解像の実行）」を参照）
 
 学習した重みは `experiments/<設定ファイルの name>/models/` に保存されます。
 

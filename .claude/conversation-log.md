@@ -26,3 +26,7 @@
 ## 2026/11/4 14:36:53
 **あなた:** またinference_realesrganでの推論のやり方も書いといて
 **Claude:** val 用の低解像度画像を作るスクリプト `scripts/generate_val_lq.py` を作り、README に使い方と推論のやり方を書き足しました。コミットはしていないので、いつものようにそちらでお願いします。 **val 用の低解像度画像の作り方** ``` python scripts/generate_val_lq.py --opt options/finetune_realesrgan_x2plus.yml ``` - `dataset/val/gt` の画像をもとに、`dataset/val/lq` に同じファイル名で低解像度画像を保存します。 - ぼかしやノイズのかけ方は学習時と同じで、JPEG 圧縮も学習と同じくかけません。数値は指定した設定ファイルから読みます。 - 乱数を固定しているので、何度実行しても同じ画像になります。 - 縦横が倍率で割り切れない画像は…
+
+## 2026/11/4 14:40:32
+**あなた:** それらの使い方もreadmeにかいといて
+**Claude:** README の学習の流れに、val 用画像の作り方を入れました。推論のやり方は、前回追加した「推論（超解像の実行）」の章にあります。 **今の README の「使い方（学習の流れ）」** 1. `createDataset.ipynb` でパッチを作る 2. 画像一覧（meta_info）を作る 3. **（新しく入れた手順）** 検証用の画像を作る    - 学習に使っていない画像を `dataset/val/gt/` に置く    - `python scripts/generate_val_lq.py --opt options/finetune_realesrgan_x2plus.yml` を実行する 4. 公式の重みを置く 5. GAN を学習する 6. できた重みで推論する（「推論（超解像の実行）」の章へ案内） **ほかに直したところ** - 「変更点」の 6 番の下にずれ…
