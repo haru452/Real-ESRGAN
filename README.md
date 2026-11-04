@@ -76,6 +76,10 @@ python scripts/generate_val_lq.py --mode bicubic --scale 2
 | `--mode` | `degrade` | `degrade`（学習と同じ劣化）か `bicubic`（縮小のみ） |
 | `--seed` | `0` | 乱数の種 |
 
+### 7. 学習ログをグラフにするスクリプトを追加（`scripts/plot_training_log.py`）
+
+学習ログから PSNR・損失・学習率のグラフを画像で保存します。使い方は下の「学習の様子をグラフで見る」を参照。
+
 ---
 
 ## 使い方（学習の流れ）
@@ -133,6 +137,56 @@ dataset/
 
 - 途中経過: `net_g_<iter数>.pth`（例: `net_g_150000.pth`）
 - 学習が最後まで終わったとき: `net_g_latest.pth`
+
+---
+
+## 学習の様子をグラフで見る
+
+### 方法 1: 学習ログからグラフ画像を作る（`scripts/plot_training_log.py`）
+
+学習ログ `experiments/<name>/train_*.log` を読み、PSNR などの評価値・損失・学習率のグラフを画像で保存します。
+画面のないサーバーでも使えます。学習中に実行すれば、その時点までのグラフになります。
+
+```bash
+# x2（既定）
+python scripts/plot_training_log.py
+
+# x4
+python scripts/plot_training_log.py experiments/finetune_RealESRGANx4plus_400k
+```
+
+実験フォルダの中に次の 2 つができます。
+
+- `training_curves.png`: グラフ
+  - PSNR は点と線で描き、一番良い点に ★ を付けます
+  - 損失は揺れが大きいので、そのままの値（薄い線）と移動平均（濃い線）を重ねます
+- `val_metrics.csv`: 検証ごとの評価値（iter と PSNR）
+
+| オプション | 既定値 | 意味 |
+|---|---|---|
+| （最初の引数） | `experiments/finetune_RealESRGANx2plus` | 実験フォルダ、またはログファイル |
+| `-o` | 実験フォルダ | 出力先フォルダ |
+| `--smooth` | `20` | 損失の移動平均の幅（ログの行数。1 行 = 100 iter）。`1` で平均しない |
+
+途中から再開してログが複数ある場合も、まとめて 1 本の線にします。
+
+### 方法 2: TensorBoard
+
+設定ファイルで `use_tb_logger: true` になっているので、`tb_logger/<name>/` に記録されています。
+
+```bash
+# サーバーで
+tensorboard --logdir tb_logger --port 6006
+
+# 手元のパソコンで（つないだまま、ブラウザで http://localhost:6006 を開く）
+ssh -L 6006:localhost:6006 <ユーザー名>@<サーバー>
+```
+
+### グラフを見るときの注意
+
+- PSNR は 1 万 iter ごとにしか記録されません（`val_freq`）
+- GAN の学習では、見た目が良くなっても PSNR が下がることがあります。最終的には、途中保存の重みで実際に超解像した画像を見比べて選んでください
+- `l_g_gan` と `l_d_*` は上下に揺れ続けるのが普通です。どれかが 0 付近に張り付いたら、学習がうまくいっていないサインです
 
 ---
 
