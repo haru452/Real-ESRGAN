@@ -49,6 +49,33 @@ Real-ESRGAN は高解像度画像に「ぼかし → リサイズ → ノイズ 
 | `train_realesrgan_x4plus.yml` | 変更 | データを `dataset/` に変更 |
 | `train_realesrgan_x2plus.yml` | 変更 | Colab の Drive 上データを使用、gt_size 128、batch 4、worker 2、133.2k iter |
 
+### 6. 検証用の低解像度画像を作るスクリプトを追加（`scripts/generate_val_lq.py`）
+
+`dataset/val/gt` の高解像度画像から、`dataset/val/lq` に低解像度画像を作ります。
+
+- 劣化のかけ方は学習時と同じです（USM シャープ → ぼかし・リサイズ・ノイズを 2 回 → sinc フィルタ。JPEG 圧縮なし）。パラメータは `--opt` で指定した学習設定から読みます
+- 乱数の種を固定しているので、何度実行しても同じ画像になります
+- 出力のファイル名は高解像度画像と同じです（検証時に同じ名前どうしで組になるため）
+- 8bit と 16bit の画像に対応しています。グレースケールは 3 チャンネルにそろえます
+- 縦横が倍率で割り切れない画像はスキップします（検証時に大きさがずれるため）
+
+```bash
+# 学習と同じ劣化（倍率は設定ファイルの scale）
+python scripts/generate_val_lq.py --opt options/finetune_realesrgan_x2plus.yml
+
+# 単純な bicubic 縮小だけにしたい場合
+python scripts/generate_val_lq.py --mode bicubic --scale 2
+```
+
+| オプション | 既定値 | 意味 |
+|---|---|---|
+| `--gt` | `dataset/val/gt` | 高解像度画像のフォルダ |
+| `--lq` | `dataset/val/lq` | 出力先フォルダ |
+| `--opt` | `options/finetune_realesrgan_x2plus.yml` | 劣化パラメータを読む学習設定 |
+| `--scale` | 設定ファイルの `scale` | 縮小倍率 |
+| `--mode` | `degrade` | `degrade`（学習と同じ劣化）か `bicubic`（縮小のみ） |
+| `--seed` | `0` | 乱数の種 |
+
 共通のデータ配置（Colab 版の `train_realesrgan_x2plus.yml` 以外）:
 
 ```
@@ -82,7 +109,56 @@ dataset/
    python realesrgan/train.py -opt options/finetune_realesrgan_x4plus.yml
    ```
 
-推論は本家と同じく `inference_realesrgan.py` を使います（[README_original.md](README_original.md) 参照）。
+学習した重みは `experiments/<設定ファイルの name>/models/` に保存されます。
+
+- 途中経過: `net_g_<iter数>.pth`（例: `net_g_150000.pth`）
+- 学習が最後まで終わったとき: `net_g_latest.pth`
+
+---
+
+## 推論（超解像の実行）
+
+`inference_realesrgan.py` を使います。
+
+- 自分で学習した重みは `--model_path` で指定します
+- `-n` には、学習したモデルと同じ構造の公式モデル名を指定します。ネットワークの形を決めるためで、x4 なら `RealESRGAN_x4plus`、x2 なら `RealESRGAN_x2plus` です
+
+```bash
+# x4 モデル（finetune_realesrgan_x4plus.yml で学習したもの）
+python inference_realesrgan.py \
+  -n RealESRGAN_x4plus \
+  --model_path experiments/finetune_RealESRGANx4plus_400k/models/net_g_latest.pth \
+  -i inputs \
+  -o results \
+  -s 4
+
+# x2 モデル（finetune_realesrgan_x2plus.yml で学習したもの）
+python inference_realesrgan.py \
+  -n RealESRGAN_x2plus \
+  --model_path experiments/finetune_RealESRGANx2plus/models/net_g_latest.pth \
+  -i inputs \
+  -o results \
+  -s 2
+```
+
+| オプション | 既定値 | 意味 |
+|---|---|---|
+| `-i` | `inputs` | 入力画像、または画像の入ったフォルダ |
+| `-o` | `results` | 出力先フォルダ |
+| `-n` | `RealESRGAN_x4plus` | モデルの構造（上の説明を参照） |
+| `--model_path` | なし | 学習した重みファイル。省略すると公式の重みを使う（ダウンロードされる） |
+| `-s` | `4` | 最終的な拡大倍率。**x2 モデルでは `-s 2` を付ける**（付けないと 4 倍に引き伸ばされる） |
+| `-t` | `0`（分割なし） | 画像を分割して処理する大きさ。GPU メモリ不足（CUDA out of memory）になったら `-t 512` などを付ける |
+| `--fp32` | 付けない（fp16） | GPU がない環境（CPU）で動かすときは付ける |
+| `--suffix` | `out` | 出力ファイル名の末尾（`a.tif` → `a_out.tif`）。`--suffix ""` で元と同じ名前 |
+| `--ext` | `auto` | 出力形式。`auto` は入力と同じ（tif なら tif） |
+
+補足:
+
+- グレースケール画像や 16bit の tif もそのまま入力できます
+- NAC の元画像のように大きな画像は、`-t 512` などを付けて分割処理すると安全です
+- 学習途中の重み（`net_g_<iter数>.pth`）を指定して、途中のモデルの結果を見ることもできます
+- 公式の重みでの結果と比べたいときは、`--model_path` を外して実行します
 
 ---
 
