@@ -98,8 +98,8 @@ network_d:
 
 # path
 path:
-  # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/finetune_RealESRNetx2plus/models/net_g_latest.pth  # 1段階目(ESRNet x2)の学習結果
+  # use the official pre-trained Real-ESRGAN x2 model
+  pretrain_network_g: experiments/pretrained_models/RealESRGAN_x2plus.pth  # 公式の x2 重みから開始
   param_key_g: params_ema
   strict_load_g: true
   pretrain_network_d: experiments/pretrained_models/RealESRGAN_x2plus_netD.pth

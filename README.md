@@ -45,7 +45,7 @@ Real-ESRGAN は高解像度画像に「ぼかし → リサイズ → ノイズ 
 | `finetune_realesrnet_x4plus.yml` | 新規 | x4 ESRNet（1 段階目）のファインチューニング。70k iter、50k で学習率半減、batch 4 |
 | `finetune_realesrgan_x4plus.yml` | 変更 | x4 GAN のファインチューニング（公式の `RealESRNet_x4plus.pth` から開始）。データを `dataset/` に、seed 1、batch 4、150k iter（130k で学習率半減）、1k iter ごとに保存 |
 | `finetune_realesrnet_x2plus.yml` | 新規 | x2 ESRNet。公式の `RealESRGAN_x2plus.pth` から開始（ESRNet x2 の重みは非公開のため）。100k iter、検証データあり |
-| `finetune_realesrgan_x2plus.yml` | 新規 | x2 GAN。上の x2 ESRNet の結果（`experiments/finetune_RealESRNetx2plus/models/net_g_latest.pth`）から開始。150k iter、検証データあり |
+| `finetune_realesrgan_x2plus.yml` | 新規 | x2 GAN のファインチューニング（公式の `RealESRGAN_x2plus.pth` と `RealESRGAN_x2plus_netD.pth` から開始）。150k iter（125k で学習率半減）、batch 4、検証データあり |
 | `train_realesrgan_x4plus.yml` | 変更 | データを `dataset/` に変更 |
 | `train_realesrgan_x2plus.yml` | 変更 | Colab の Drive 上データを使用、gt_size 128、batch 4、worker 2、133.2k iter |
 
@@ -114,11 +114,17 @@ dataset/
    - 細かいオプションは上の「6. 検証用の低解像度画像を作るスクリプトを追加」を参照
    - x4 の設定ファイル（`finetune_realesrgan_x4plus.yml`）は検証の設定がコメントアウトされているので、そのままならこの手順は不要。検証したいときは、そのファイルの `val:` の 2 か所（`datasets` の中と末尾）のコメントを外し、`dataroot_gt` を `dataset/val/gt`、`dataroot_lq` を `dataset/val/lq` にする
 
-4. 本家の事前学習済み重みを `experiments/pretrained_models/` に置く（`RealESRNet_x4plus.pth`、`RealESRGAN_x4plus_netD.pth` など）
+4. 本家の事前学習済み重みを `experiments/pretrained_models/` に置く
+   - x4: `RealESRNet_x4plus.pth`、`RealESRGAN_x4plus_netD.pth`
+   - x2: `RealESRGAN_x2plus.pth`、`RealESRGAN_x2plus_netD.pth`
 5. 公式の重みから GAN をファインチューニングする
 
    ```bash
+   # x4
    python realesrgan/train.py -opt options/finetune_realesrgan_x4plus.yml
+
+   # x2
+   python realesrgan/train.py -opt options/finetune_realesrgan_x2plus.yml
    ```
 
 6. できた重みで推論する（下の「推論（超解像の実行）」を参照）
