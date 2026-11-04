@@ -12,6 +12,12 @@ python scripts/generate_meta_info.py --input dataset/high3 dataset/low3  --root 
 python realesrgan/train.py -opt options/finetune_realesrgan_x4plus.yml 
 
 
+python scripts/generate_meta_info.py \
+  --input dataset/high6 \
+  --root dataset \
+  --meta_info dataset/meta_infometa_info_imagesmultiscale.txt \
+  --check
+
 
 👀[**Demos**](#-demos-videos) **|** 🚩[**Updates**](#-updates) **|** ⚡[**Usage**](#-quick-inference) **|** 🏰[**Model Zoo**](docs/model_zoo.md) **|** 🔧[Install](#-dependencies-and-installation)  **|** 💻[Train](docs/Training.md) **|** ❓[FAQ](docs/FAQ.md) **|** 🎨[Contribution](docs/CONTRIBUTING.md)
 
