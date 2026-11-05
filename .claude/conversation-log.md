@@ -58,3 +58,10 @@
 ## 2026/11/4 15:29:49
 **あなた:** またデータセットフォルダーにある内容を見て、これで学習させていいと思いますか
 **Claude:** 学習ログから PSNR・損失・学習率のグラフ画像を作るスクリプト `scripts/plot_training_log.py` を作りました。README の使い方にも追加済みで、まだコミットしていません。 **使い方（サーバーで実行）** ``` cd ~/Real-ESRGAN git pull          # こちらでコミット・push した後に python scripts/plot_training_log.py ``` `experiments/finetune_RealESRGANx2plus/` の中に、次の 2 つができます。 - `training_curves.png`：グラフ。PSNR は点と線で描き、一番良い時点に ★ を付けます。損失はそのままの値（薄い線）と平均した値（濃い線）を重ねます - `val_metrics.csv`：検証ごとの PSNR の表…
+
+## 2026/11/5 11:28:54
+**あなた:** 新しくgitのbranchでdevekopにEDSRのコードを増やしたんだけど、こっちもvalを使って過学習していないか見るようにしたいです
+
+## 2026/11/5 11:29:04
+**あなた:** またちゃんとEDSRになっているかも確認してください
+**Claude:** 動作確認として、公式の EDSR の重み（軽い baseline 版）をダウンロードして、読み込めるか・正しく超解像できるかを試します。

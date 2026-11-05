@@ -30,6 +30,17 @@ EDSR ファインチューニングスクリプト（.pt / .onnx 両対応版）
 
     ※ --io_names_from は任意。元の ailia 用 ONNX の入出力名を引き継ぎたいときに指定します。
 
+過学習の確認 (val):
+    --val_hr_dir を付けると、--val_every エポックごとに val の L1 損失と PSNR を計算し、
+    --log_dir に val_metrics.csv と training_curves.png を保存します。
+    PSNR が一番良かったエポックの重みは checkpoint_best.pt に保存し、
+    ONNX にもその重みを書き出します (--export_weights last で最後の重みに変更可)。
+
+        python EDSR/edsr_fine_tuning2.py ... --val_hr_dir ./dataset/val/gt --val_max_images 200
+
+    --val_lr_dir を省略すると、学習と同じ bicubic 縮小で val の LR を作ります。
+    --val_max_images は時間短縮用 (名前順で先頭から指定枚数。省略で全部)。
+
 入力の前提: RGB / float32 / 0-255 (正規化なし)。EDSR-PyTorch・ailia とも同じ。
 """
 
@@ -44,6 +55,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+
+from edsr_val import ValLogger, ValSet, evaluate
 
 
 # ======================
@@ -184,6 +197,17 @@ def get_args():
     parser.add_argument('--save_every', type=int, default=10, help='何エポックごとに保存するか')
     parser.add_argument('--iters_per_epoch', type=int, default=None,
                         help='1エポックあたりに切り出すパッチ数 (省略時は画像枚数と同数)')
+    parser.add_argument('--val_hr_dir', default=None,
+                        help='val の高解像度(正解)画像フォルダ。指定すると過学習チェックを行う')
+    parser.add_argument('--val_lr_dir', default=None,
+                        help='val の低解像度画像フォルダ (同名で組にする。省略時は bicubic で自動生成)')
+    parser.add_argument('--val_every', type=int, default=1, help='何エポックごとに val を行うか')
+    parser.add_argument('--val_max_images', type=int, default=None,
+                        help='val に使う最大枚数 (名前順で先頭から。省略時は全部)')
+    parser.add_argument('--log_dir', default='.',
+                        help='val_metrics.csv / training_curves.png / checkpoint_best.pt の保存先')
+    parser.add_argument('--export_weights', choices=['best', 'last'], default='best',
+                        help='ONNX に書き出す重み (best: val PSNR 最良 / last: 最後のエポック)')
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     return parser.parse_args()
@@ -330,6 +354,20 @@ def main():
     optimizer = torch.optim.Adam(params, lr=args.lr)
     criterion = nn.L1Loss()  # EDSR は L1 loss が一般的
 
+    val_set, val_logger, best_psnr = None, None, -float('inf')
+    best_path = os.path.join(args.log_dir, 'checkpoint_best.pt')
+    if args.val_hr_dir:
+        val_set = ValSet(args.val_hr_dir, args.val_lr_dir, args.scale, args.val_max_images)
+        val_logger = ValLogger(args.log_dir)
+        lr_src = args.val_lr_dir or 'bicubic で自動生成'
+        print(f"  val: {len(val_set)} 枚 (LR: {lr_src}) を {args.val_every} エポックごとに評価")
+        # 学習前の値 (epoch 0) を基準として記録
+        val_loss, val_psnr = evaluate(model, val_set, args.device)
+        print(f"  epoch    0 (学習前)  val_loss={val_loss:.4f}  val_psnr={val_psnr:.3f} dB")
+        val_logger.add(0, float('nan'), val_loss, val_psnr)
+        best_psnr = val_psnr
+        torch.save(model.state_dict(), best_path)
+
     print(f"[3/4] 学習開始 (device={args.device})")
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -348,12 +386,29 @@ def main():
             n_batches += 1
 
         avg_loss = epoch_loss / max(n_batches, 1)
-        print(f"  epoch {epoch:4d}/{args.epochs}  loss={avg_loss:.4f}")
+        msg = f"  epoch {epoch:4d}/{args.epochs}  loss={avg_loss:.4f}"
+
+        if val_set is not None and (epoch % args.val_every == 0 or epoch == args.epochs):
+            val_loss, val_psnr = evaluate(model, val_set, args.device)
+            msg += f"  val_loss={val_loss:.4f}  val_psnr={val_psnr:.3f} dB"
+            val_logger.add(epoch, avg_loss, val_loss, val_psnr)
+            if val_psnr > best_psnr:
+                best_psnr = val_psnr
+                torch.save(model.state_dict(), best_path)
+                msg += "  (best 更新)"
+        print(msg)
 
         if epoch % args.save_every == 0 or epoch == args.epochs:
             ckpt_path = f"checkpoint_epoch{epoch}.pt"
             torch.save(model.state_dict(), ckpt_path)  # .pt 入力時は EDSR-PyTorch 互換
             print(f"    -> チェックポイント保存: {ckpt_path}")
+
+    if val_set is not None:
+        print(f"  val PSNR 最良: {best_psnr:.3f} dB -> {best_path}")
+        print(f"  グラフ: {val_logger.png_path} / 表: {val_logger.csv_path}")
+        if args.export_weights == 'best':
+            model.load_state_dict(torch.load(best_path, map_location=args.device))
+            print("  ONNX には val PSNR が最良の重みを書き出します")
 
     print(f"[4/4] ONNX へエクスポート中: {args.output_path}")
     model.eval()
