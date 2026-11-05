@@ -7,6 +7,7 @@ ailia を使わず onnxruntime だけで動くので、finetune_edsr.py で書�
 前処理・後処理は元の recognize_from_image.py (ailia版) と揃えてあります:
   - 画像は RGB, 0-255 の float のまま (正規化なし)
   - 出力は 0-255 にクリップして BGR で保存
+  - 入力が白黒画像 (1 チャンネル、または R=G=B) なら、出力も白黒の 1 チャンネルで保存
 
 必要なパッケージ:
     pip install onnxruntime opencv-python numpy
@@ -60,7 +61,19 @@ def list_input_images(input_path):
         return [input_path]
 
 
+def is_gray_image(image_path):
+    """白黒画像か判定する。1 チャンネルの画像と、3 チャンネルでも R=G=B の画像を白黒とみなす"""
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise FileNotFoundError(f"画像を読み込めません: {image_path}")
+    if img.ndim == 2 or img.shape[2] == 1:
+        return True
+    return bool(np.array_equal(img[..., 0], img[..., 1]) and
+                np.array_equal(img[..., 1], img[..., 2]))
+
+
 def preprocess(image_path):
+    # 学習時と同じ読み方。白黒画像も同じ値を 3 チャンネルにコピーした RGB になる
     img = cv2.imread(image_path, cv2.IMREAD_COLOR)  # BGR, uint8
     if img is None:
         raise FileNotFoundError(f"画像を読み込めません: {image_path}")
@@ -70,10 +83,15 @@ def preprocess(image_path):
     return input_data
 
 
-def postprocess(output_data):
+def postprocess(output_data, to_gray=False):
     # NCHW -> HWC
     output_img = output_data[0].transpose(1, 2, 0)
     output_img = np.clip(output_img, 0, 255)
+    if to_gray:
+        # 3 チャンネルの出力がわずかにずれて色が付くのを防ぐため、白黒の 1 チャンネルに戻す
+        # (Real-ESRGAN の推論と同じ変換)
+        output_img = cv2.cvtColor(output_img.astype(np.float32), cv2.COLOR_RGB2GRAY)
+        return output_img.astype(np.uint8)
     output_img = output_img.astype(np.uint8)
     output_img = cv2.cvtColor(output_img, cv2.COLOR_RGB2BGR)
     return output_img
@@ -103,9 +121,12 @@ def main():
     for image_path in input_paths:
         print(f"処理中: {image_path}")
         input_data = preprocess(image_path)
+        to_gray = is_gray_image(image_path)
 
         outputs = session.run([output_name], {input_name: input_data})
-        output_img = postprocess(outputs[0])
+        output_img = postprocess(outputs[0], to_gray=to_gray)
+        if to_gray:
+            print("  白黒画像なので、出力も白黒で保存します")
 
         out_path = get_output_path(args.savepath, image_path, is_dir_output)
         cv2.imwrite(out_path, output_img)
