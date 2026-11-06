@@ -1,9 +1,13 @@
 # Real-ESRGAN（月面 NAC 画像向け改造版）
 
-[Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) をフォークし、月面画像サイト **QuickMap** で入手できる **LROC NAC 画像**を超解像するために改造したものです。
+[Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) をフォーク
 
 - 本家の README は [README_original.md](README_original.md) に移動しました（インストール方法・推論方法・モデル一覧などはそちらを参照）。
 - 本家からの分岐点はコミット `a4abfb2`（2024-04-03）です。差分は `git diff a4abfb2 HEAD` で確認できます。
+
+
+python Real-ESRGAN/inference_realesrgan.py -n RealESRGAN_x2plus -i ./inputs --outscale 2 --model_path ./Real-ESRGAN/experiments/finetune_RealESRGANx2plus1106/models/net_g_latest.pth --output ./result/RealESRGANx1106
+
 
 ---
 
