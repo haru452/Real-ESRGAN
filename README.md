@@ -84,6 +84,10 @@ python scripts/generate_val_lq.py --mode bicubic --scale 2
 
 途中保存の重みごとに val の画像を超解像して、並べた比較画像を作ります。使い方は下の「途中保存の重みを見比べる」を参照。
 
+### 9. 重みごとの障害物検出の違いを調べるスクリプトを追加（`scripts/evaluate_checkpoints_mask.py`）
+
+先行研究の障害物検出を SR 画像と GT 画像にかけ、マスクの違いを重みごとに線グラフにします。使い方は下の「重みごとの障害物検出の違いを線グラフにする」を参照。
+
 ---
 
 ## 使い方（学習の流れ）
@@ -192,32 +196,6 @@ ssh -L 6006:localhost:6006 <ユーザー名>@<サーバー>
 - GAN の学習では、見た目が良くなっても PSNR が下がることがあります。最終的には、途中保存の重みで実際に超解像した画像を見比べて選んでください
 - `l_g_gan` と `l_d_*` は上下に揺れ続けるのが普通です。どれかが 0 付近に張り付いたら、学習がうまくいっていないサインです
 
-### 重みごとの障害物検出の違いを線グラフにする（`scripts/evaluate_checkpoints_mask.py`）
-
-上の見比べの出力を使い、先行研究の障害物検出（`evaluate.py`）を SR 画像と GT 画像にかけて、マスクの違いを重みごとに調べます。
-検出の処理は `scripts/crater_mask.py` にまとめてあります。先に `compare_checkpoints.py` を実行しておいてください。
-
-```bash
-python scripts/evaluate_checkpoints_mask.py
-python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
-```
-
-`experiments/<name>/compare/` に次が保存されます。
-
-- `mask_diff_curves.png`: iter ごとの線グラフ（画像ごとに 1 本。公式の重みは横の点線）
-  - 違う塊（クレーター）の数（SR のみ + GT のみ）
-  - 違う塊の面積（px）
-  - GT のマスクとの IoU（高いほど GT に近い）
-- `mask_metrics.csv`: 画像 × 重みの数値
-- `<画像名>/diff_<重み名>.png`: 差分を重ねた画像（赤: SR のみ、緑: GT のみ）
-
-| オプション | 既定値 | 意味 |
-|---|---|---|
-| `--compare_dir` | `experiments/finetune_RealESRGANx2plus/compare` | `compare_checkpoints.py` の出力 |
-| `--gt_dir` | `dataset/val/gt` | GT 画像のフォルダ |
-| `--ratio` | `0.3` | 他方のマスクとの重なり割合がこれ以下の塊を「違う塊」とする（元のコードと同じ値） |
-| `--no-save-images` | なし | 差分を重ねた画像を保存しない |
-
 ---
 
 ## 途中保存の重みを見比べる（`scripts/compare_checkpoints.py`）
@@ -262,6 +240,44 @@ python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 
 - `--iters` を省略すると 5k 刻みで全部（30 個）を処理するので、比較画像が大きくなります
 - 重みは学習時の val と同じ `params_ema` を読み込みます
+
+## 重みごとの障害物検出の違いを線グラフにする（`scripts/evaluate_checkpoints_mask.py`）
+
+「途中保存の重みを見比べる」の出力を使い、先行研究の障害物検出（`evaluate.py`）を SR 画像と GT 画像にかけて、マスクの違いを重みごとに調べます。
+検出の処理は `scripts/crater_mask.py` にまとめてあります。先に `compare_checkpoints.py` を実行しておいてください（流れは次のとおり）。
+
+```bash
+# 1. 重みごとに超解像する（compare/ に画像ができる）
+python scripts/compare_checkpoints.py --iters 10000 50000 100000 150000
+
+# 2. 障害物検出をかけて、GT のマスクとの違いを線グラフにする
+python scripts/evaluate_checkpoints_mask.py
+```
+
+オプションを付ける例:
+
+```bash
+python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
+```
+
+`experiments/<name>/compare/` に次が保存されます。
+
+- `mask_diff_curves.png`: iter ごとの線グラフ（画像ごとに 1 本。公式の重みは横の点線）
+  - 違う塊（クレーター）の数（SR のみ + GT のみ）
+  - 違う塊の面積（px）
+  - GT のマスクとの IoU（高いほど GT に近い）
+- `mask_metrics.csv`: 画像 × 重みの数値
+- `<画像名>/diff_<重み名>.png`: 差分を重ねた画像（赤: SR のみ、緑: GT のみ）
+
+| オプション | 既定値 | 意味 |
+|---|---|---|
+| `--compare_dir` | `experiments/finetune_RealESRGANx2plus/compare` | `compare_checkpoints.py` の出力 |
+| `--gt_dir` | `dataset/val/gt` | GT 画像のフォルダ |
+| `--ratio` | `0.3` | 他方のマスクとの重なり割合がこれ以下の塊を「違う塊」とする（元のコードと同じ値） |
+| `--no-save-images` | なし | 差分を重ねた画像を保存しない |
+
+- 検出は先行研究の方法（`evaluate.py`）をそのまま使っています。「違う塊」は、他方のマスクとの重なり割合が `--ratio` 以下の塊です
+- 画像が少ないと線が揺れるので、`compare_checkpoints.py` の `--num` で枚数を増やしてください
 
 ---
 
