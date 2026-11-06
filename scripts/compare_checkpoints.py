@@ -119,7 +119,7 @@ def save_grid(path, title, panels, cols, crop):
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--exp', default=os.path.join(root, 'experiments', 'finetune_RealESRGANx2plus'),
+    p.add_argument('--exp', default=os.path.join(root, 'experiments', 'finetune_RealESRGANx2plus1106'),
                    help='実験フォルダ（中に models/net_g_*.pth がある）')
     p.add_argument('--lq_dir', default=os.path.join(root, 'dataset', 'val', 'lq'), help='val の LQ 画像フォルダ')
     p.add_argument('--gt_dir', default=os.path.join(root, 'dataset', 'val', 'gt'), help='val の GT 画像フォルダ（無ければ PSNR は出さない）')

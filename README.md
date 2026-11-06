@@ -229,7 +229,7 @@ python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 
 | オプション | 既定値 | 意味 |
 |---|---|---|
-| `--exp` | `experiments/finetune_RealESRGANx2plus` | 実験フォルダ |
+| `--exp` | `experiments/finetune_RealESRGANx2plus1106` | 実験フォルダ |
 | `--lq_dir` / `--gt_dir` | `dataset/val/lq` / `dataset/val/gt` | val の画像フォルダ（GT が無ければ PSNR は出さない） |
 | `--images` | （ランダム） | 使う画像名（拡張子なし） |
 | `--num` / `--seed` | `5` / `0` | ランダムに選ぶ枚数と乱数の種（種が同じなら同じ画像）。平均を見るなら 20〜50 くらい |
@@ -276,7 +276,7 @@ python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
 
 | オプション | 既定値 | 意味 |
 |---|---|---|
-| `--compare_dir` | `experiments/finetune_RealESRGANx2plus/compare` | `compare_checkpoints.py` の出力 |
+| `--compare_dir` | `experiments/finetune_RealESRGANx2plus1106/compare` | `compare_checkpoints.py` の出力 |
 | `--gt_dir` | `dataset/val/gt` | GT 画像のフォルダ |
 | `--ratio` | `0.3` | 他方のマスクとの重なり割合がこれ以下の塊を「違う塊」とする（元のコードと同じ値） |
 | `--no-save-images` | なし | 差分を重ねた画像を保存しない |
