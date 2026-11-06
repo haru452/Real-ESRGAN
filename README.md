@@ -256,8 +256,9 @@ python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 検出の処理は `scripts/crater_mask.py` にまとめてあります。先に `compare_checkpoints.py` を実行しておいてください（流れは次のとおり）。
 
 ```bash
-# 1. 重みごとに超解像する（compare/ に画像ができる）
-python scripts/compare_checkpoints.py --iters 10000 50000 100000 150000
+# 1. 重みごとに超解像する（compare/ に画像ができる）。公式の重みを並べると、差のグラフも作れる
+#    以前の結果が残っていると混ざるので、compare/ は先に消すか、--output で別の場所にする
+python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 
 # 2. 障害物検出をかけて、GT のマスクとの違いを線グラフにする
 python scripts/evaluate_checkpoints_mask.py
@@ -271,7 +272,10 @@ python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
 
 `experiments/<name>/compare/` に次が保存されます。
 
-- `mask_diff_curves.png`: iter ごとの線グラフ。画像ごとの薄い線と、**全画像の平均（赤の太線）とばらつき（±1 標準偏差の帯）**。公式の重みは平均の横の点線
+- `mask_diff_curves.png`: iter ごとの線グラフ。画像ごとの薄い線と、**全画像の平均（赤の太線）とばらつき（±1 標準偏差の帯）**。
+  - 上の段: 値そのもの。公式の重みは平均の横の点線
+  - 下の段: **公式の重みとの差**。画像ごとの違い（クレーターの数など）が消えて、重みの効果だけが見える。0 が「公式と同じ」。クレーターの数・面積は 0 より下、IoU は 0 より上なら、公式より GT に近い
+  - 平均は、**全画像にそろっている iter だけ**で取る（iter の集合が違う画像が混ざると、警告を出す）
   - 違う塊（クレーター）の数（SR のみ + GT のみ）
   - 違う塊の面積（px）
   - GT のマスクとの IoU（高いほど GT に近い）
@@ -283,6 +287,7 @@ python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
 | `--compare_dir` | `experiments/finetune_RealESRGANx2plus1106/compare` | `compare_checkpoints.py` の出力 |
 | `--gt_dir` | `dataset/val/gt` | GT 画像のフォルダ |
 | `--ratio` | `0.3` | 他方のマスクとの重なり割合がこれ以下の塊を「違う塊」とする（元のコードと同じ値） |
+| `--baseline` | `official` | この重みとの差を下の段に描く。無ければ下の段は作らない |
 | `--no-save-images` | なし | 差分を重ねた画像を保存しない |
 
 - 検出は先行研究の方法（`evaluate.py`）をそのまま使っています。「違う塊」は、他方のマスクとの重なり割合が `--ratio` 以下の塊です

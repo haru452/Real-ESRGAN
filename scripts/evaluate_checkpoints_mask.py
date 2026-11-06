@@ -56,45 +56,60 @@ METRICS = [
 ]
 
 
-def mean_curve(results, fn):
-    """iter ごとの全画像の平均と標準偏差。(iters, mean, std) を返す。"""
-    by_iter = {}
-    for rows in results.values():
-        for _, it, m in rows:
-            if it is not None:
-                by_iter.setdefault(it, []).append(fn(m))
-    iters = sorted(by_iter)
-    return (iters, np.array([np.mean(by_iter[i]) for i in iters]), np.array([np.std(by_iter[i]) for i in iters]))
+def value_table(results, fn, baseline=None):
+    """{画像名: {iter: 値}} と、iter の無い重み（official など）の {画像名: {ラベル: 値}} を返す。
+
+    baseline にラベル（例: 'official'）を渡すと、各画像で「その重みの値 − baseline の値」に直す。
+    画像ごとの差（クレーターの数など）を消して、重みの効果だけを見るため。
+    """
+    table, fixed = {}, {}
+    for stem, rows in results.items():
+        base = next((fn(m) for label, _, m in rows if label == baseline), None) if baseline else None
+        if baseline and base is None:
+            continue  # この画像には baseline が無いので使わない
+        table[stem] = {it: fn(m) - (base or 0) for _, it, m in rows if it is not None}
+        fixed[stem] = {label: fn(m) - (base or 0) for label, it, m in rows if it is None}
+    return table, fixed
 
 
-def official_mean(results, fn):
-    """iter の無い重み（official など）の全画像の平均。{ラベル: 平均}"""
-    vals = {}
-    for rows in results.values():
-        for label, it, m in rows:
-            if it is None:
-                vals.setdefault(label, []).append(fn(m))
-    return {k: float(np.mean(v)) for k, v in vals.items()}
+def mean_curve(table):
+    """全画像にそろっている iter だけで、平均と標準偏差を出す。(iters, mean, std)
+
+    画像によって iter の集合が違うと、iter ごとに平均する画像の数が変わってしまうため、共通の iter だけを使う。
+    """
+    common = set.intersection(*(set(v) for v in table.values())) if table else set()
+    iters = sorted(common)
+    vals = np.array([[table[s][i] for i in iters] for s in table])
+    return iters, vals.mean(axis=0), vals.std(axis=0)
 
 
-def plot_curves(path, results, ratio):
-    """results: {画像名: [(label, iter or None, metrics), ...]}。画像ごとの薄い線と、全画像の平均（太線＋帯）を描く。"""
-    fig, axes = plt.subplots(1, len(METRICS), figsize=(6 * len(METRICS), 4.5))
+def plot_curves(path, results, ratio, baseline=None):
+    """上の段: 値そのもの。下の段（baseline があるとき）: baseline との差。どちらも画像ごとの薄い線と全画像の平均（太線＋帯）。"""
+    has_base = baseline is not None and any(label == baseline for rows in results.values() for label, _, _ in rows)
+    modes = [(None, 'raw')] + ([(baseline, f'minus {baseline}')] if has_base else [])
+    fig, axes = plt.subplots(len(modes), len(METRICS), figsize=(6 * len(METRICS), 4.5 * len(modes)), squeeze=False)
     few = len(results) <= 5  # 枚数が少ないときだけ、画像ごとの凡例を出す
-    for ax, (title, fn) in zip(axes, METRICS):
-        for stem, rows in results.items():
-            curve = sorted((r for r in rows if r[1] is not None), key=lambda r: r[1])
-            ax.plot([r[1] for r in curve], [fn(r[2]) for r in curve], color='gray' if not few else None,
-                    alpha=0.25 if not few else 0.8, linewidth=1, label=stem if few else None)
-        iters, mean, std = mean_curve(results, fn)
-        ax.fill_between(iters, mean - std, mean + std, color='tab:red', alpha=0.12)
-        ax.plot(iters, mean, color='tab:red', marker='o', linewidth=2.5, label=f'mean of {len(results)} images (±1 std)')
-        for label, v in official_mean(results, fn).items():
-            ax.axhline(v, color='black', linestyle='--', alpha=0.7, label=f'{label} (mean)')
-        ax.set_title(title)
-        ax.set_xlabel('iter')
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=8)
+    for r, (base, tag) in enumerate(modes):
+        for ax, (title, fn) in zip(axes[r], METRICS):
+            table, fixed = value_table(results, fn, base)
+            for stem, vals in table.items():
+                its = sorted(vals)
+                ax.plot(its, [vals[i] for i in its], color=None if few else 'gray',
+                        alpha=0.8 if few else 0.25, linewidth=1, label=stem if few else None)
+            iters, mean, std = mean_curve(table)
+            ax.fill_between(iters, mean - std, mean + std, color='tab:red', alpha=0.12)
+            ax.plot(iters, mean, color='tab:red', marker='o', linewidth=2.5,
+                    label=f'mean of {len(table)} images (±1 std)')
+            if base is None:
+                for label in {k for v in fixed.values() for k in v}:
+                    ax.axhline(np.mean([v[label] for v in fixed.values() if label in v]), color='black',
+                               linestyle='--', alpha=0.7, label=f'{label} (mean)')
+            else:
+                ax.axhline(0, color='black', linestyle='--', alpha=0.7)
+            ax.set_title(title if base is None else f'{title} [{tag}]')
+            ax.set_xlabel('iter')
+            ax.grid(alpha=0.3)
+            ax.legend(fontsize=8)
     fig.suptitle(f'Crater-mask difference between SR and GT (overlap ratio threshold {ratio}, {len(results)} images)')
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -108,6 +123,8 @@ def main():
                    help='compare_checkpoints.py の出力フォルダ')
     p.add_argument('--gt_dir', default=os.path.join(root, 'dataset', 'val', 'gt'), help='GT 画像のフォルダ')
     p.add_argument('--ratio', type=float, default=0.3, help='重なり割合がこれ以下の塊を「違う塊」とする（元のコードは 0.3）')
+    p.add_argument('--baseline', default='official',
+                   help='この重みとの差のグラフも作る（下の段）。compare_checkpoints.py に --official を付けて作った official が既定。無ければ作らない')
     p.add_argument('--no-save-images', action='store_true', help='差分を重ねた画像を保存しない')
     args = p.parse_args()
 
@@ -161,7 +178,13 @@ def main():
         wr = csv.DictWriter(f, fieldnames=list(csv_rows[0].keys()))
         wr.writeheader()
         wr.writerows(csv_rows)
-    plot_curves(os.path.join(args.compare_dir, 'mask_diff_curves.png'), results, args.ratio)
+    iter_sets = {st: frozenset(it for _, it, _ in rows if it is not None) for st, rows in results.items()}
+    if len(set(iter_sets.values())) > 1:
+        common = frozenset.intersection(*iter_sets.values())
+        print(f'注意: 画像によって iter の集合が違います（古い結果が混ざっていませんか）。平均は共通の {len(common)} 個の iter だけで取ります')
+    if not any(label == args.baseline for rows in results.values() for label, _, _ in rows):
+        print(f'注意: baseline "{args.baseline}" が無いので、差のグラフは作りません（compare_checkpoints.py に --official を付けて作り直すと作れます）')
+    plot_curves(os.path.join(args.compare_dir, 'mask_diff_curves.png'), results, args.ratio, args.baseline)
     print('保存先:', args.compare_dir)
 
 
