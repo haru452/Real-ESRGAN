@@ -65,8 +65,8 @@ wget https://cv.snu.ac.kr/research/EDSR/models/edsr_baseline_x2-1bc95232.pt   # 
 
 ```
 python EDSR/edsr_fine_tuning2.py \
-    --weight_path ./edsr_x2-0edfb8a3.pt \
-    --hr_dir <学習用 HR 画像のフォルダ> \
+    --weight_path ./EDSR/EDSR_x2.pt \
+    --hr_dir ./dataset/high6 \
     --scale 2 \
     --patch_size 48 \
     --batch_size 16 \
@@ -75,9 +75,17 @@ python EDSR/edsr_fine_tuning2.py \
     --save_every 10 \
     --val_hr_dir ./dataset/val/gt \
     --val_max_images 200 \
-    --log_dir ./edsr_logs \
-    --output_path ./edsr_logs/edsr_scale2_finetuned.onnx
+    --log_dir ./EDSR/edsr_logs \
+    --output_path ./EDSR/edsr_scale2_finetuned.onnx
 ```
+
+コマンドを書くときの注意（エラー `the following arguments are required: --weight_path` の原因になりやすい）
+
+- 行末の `\` の後ろに **空白を入れない**。`\` は「次の行に続く」という意味で、後ろに空白があると効かなくなる。
+- 行頭に `\` を置かない。
+- 引数名の前は **`--`**（例: `--val_hr_dir`）。`--` が無いと引数として読まれない。
+- 綴りに注意（例: `--output_path`。`--opuput_path` ではない）。
+- 迷ったら、全部を 1 行で書く。
 
 主な引数
 
