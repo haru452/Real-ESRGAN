@@ -25,6 +25,7 @@ import numpy as np
 import torch
 from basicsr.archs.rrdbnet_arch import RRDBNet
 
+from progress import Progress
 from realesrgan import RealESRGANer
 
 matplotlib.use('Agg')
@@ -123,7 +124,8 @@ def main():
     p.add_argument('--lq_dir', default=os.path.join(root, 'dataset', 'val', 'lq'), help='val の LQ 画像フォルダ')
     p.add_argument('--gt_dir', default=os.path.join(root, 'dataset', 'val', 'gt'), help='val の GT 画像フォルダ（無ければ PSNR は出さない）')
     p.add_argument('--images', nargs='*', default=None, help='使う画像名（拡張子なし）。省略時は val からランダムに選ぶ')
-    p.add_argument('--num', type=int, default=2, help='ランダムに選ぶ枚数')
+    p.add_argument('--num', type=int, default=2, help='ランダムに選ぶ枚数（平均を見るなら 20〜50 くらい）')
+    p.add_argument('--grid_num', type=int, default=2, help='並べた比較画像（compare_*.png）を作る枚数。先頭からこの枚数だけ')
     p.add_argument('--seed', type=int, default=0, help='ランダム選択の seed')
     p.add_argument('--iters', nargs='*', type=int, default=None, help='比較する iter（例: 10000 50000）。省略時は全部')
     p.add_argument('--official', default=None, help='公式の重み（例: weights/RealESRGAN_x2plus.pth）。指定すると並べる')
@@ -146,61 +148,67 @@ def main():
         raise SystemExit(f'重みが見つかりません: {os.path.join(args.exp, "models")}')
 
     images = pick_images(args.lq_dir, args.images, args.num, args.seed)
-    print('画像:', [os.path.basename(i) for i in images])
+    print(f'画像: {len(images)} 枚', [os.path.basename(i) for i in images][:5], '...' if len(images) > 5 else '')
     print('重み:', [w[0] for w in weights])
 
     # 画像の読み込み
     items = []
-    for path in images:
+    for n, path in enumerate(images):
         stem = os.path.splitext(os.path.basename(path))[0]
         gt_path = find_gt(args.gt_dir, stem)
         items.append({
             'stem': stem,
             'lq': cv2.imread(path, cv2.IMREAD_COLOR),
             'gt': cv2.imread(gt_path, cv2.IMREAD_COLOR) if gt_path else None,
-            'outs': [],
+            'outs': [],  # 比較画像を作る最初の grid_num 枚だけ、出力を覚えておく（枚数が多いとメモリが足りなくなるため）
+            'psnr': {},
+            'grid': n < args.grid_num,
         })
         os.makedirs(os.path.join(out_dir, stem), exist_ok=True)
 
     # 重みを 1 つずつ読み込んで、全画像を処理する（重みの読み込み回数を最小にする）
+    progress = Progress(len(weights) * len(items), '超解像')
     for label, wpath in weights:
-        print(f'超解像: {label}')
         up = build_upsampler(wpath, args.scale, args)
         for it in items:
             out, _ = up.enhance(it['lq'], outscale=args.scale)
-            it['outs'].append((label, out))
             cv2.imwrite(os.path.join(out_dir, it['stem'], f'{label}.png'), out)
+            if it['grid']:
+                it['outs'].append((label, out))
+            if it['gt'] is not None and it['gt'].shape == out.shape:
+                it['psnr'][label] = psnr(out, it['gt'])
+            progress.step(f'{label} {it["stem"]}')
         del up
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    # 比較画像と PSNR 表
-    psnr_rows = []
+    # 比較画像（最初の grid_num 枚だけ）
     for it in items:
+        if not it['grid']:
+            continue
         lq_up = cv2.resize(it['lq'], None, fx=args.scale, fy=args.scale, interpolation=cv2.INTER_NEAREST)
         panels = [('LQ (nearest x%d)' % args.scale, lq_up)]
-        gt = it['gt']
-        row = {'image': it['stem']}
         for label, out in it['outs']:
-            text = label
-            if gt is not None and gt.shape == out.shape:
-                v = psnr(out, gt)
-                row[label] = round(v, 4)
-                text += f'  PSNR {v:.2f}'
+            text = label + (f'  PSNR {it["psnr"][label]:.2f}' if label in it['psnr'] else '')
             panels.append((text, out))
-        if gt is not None:
-            panels.append(('GT', gt))
-        psnr_rows.append(row)
+        if it['gt'] is not None:
+            panels.append(('GT', it['gt']))
         save_grid(os.path.join(out_dir, f'compare_{it["stem"]}.png'), it['stem'], panels, args.cols, args.crop)
 
-    if any(len(r) > 1 for r in psnr_rows):
+    # PSNR の表（最後の行に全画像の平均）
+    if any(it['psnr'] for it in items):
         cols = ['image'] + [w[0] for w in weights]
+        rows = [{'image': it['stem'], **{k: round(v, 4) for k, v in it['psnr'].items()}} for it in items]
+        mean = {'image': 'MEAN'}
+        for label, _ in weights:
+            vals = [it['psnr'][label] for it in items if label in it['psnr']]
+            if vals:
+                mean[label] = round(float(np.mean(vals)), 4)
         with open(os.path.join(out_dir, 'psnr.csv'), 'w', newline='') as f:
             wr = csv.DictWriter(f, fieldnames=cols, restval='')
             wr.writeheader()
-            wr.writerows(psnr_rows)
-        for r in psnr_rows:
-            print(r)
+            wr.writerows(rows + [mean])
+        print('PSNR 平均:', {k: v for k, v in mean.items() if k != 'image'})
     print('保存先:', out_dir)
 
 

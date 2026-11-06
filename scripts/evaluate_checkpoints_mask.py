@@ -25,6 +25,7 @@ import matplotlib
 import numpy as np
 
 from crater_mask import OriginalCNN, compare_masks, overlay_mask_on_image
+from progress import Progress
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
@@ -48,29 +49,53 @@ def find_gt(gt_dir, stem):
     return None
 
 
+METRICS = [
+    ('Differing craters (SR-only + GT-only)', lambda m: m['sr_only_count'] + m['gt_only_count']),
+    ('Differing area [px] (SR-only + GT-only)', lambda m: m['sr_only_px'] + m['gt_only_px']),
+    ('Mask IoU with GT mask', lambda m: m['mask_iou']),
+]
+
+
+def mean_curve(results, fn):
+    """iter ごとの全画像の平均と標準偏差。(iters, mean, std) を返す。"""
+    by_iter = {}
+    for rows in results.values():
+        for _, it, m in rows:
+            if it is not None:
+                by_iter.setdefault(it, []).append(fn(m))
+    iters = sorted(by_iter)
+    return (iters, np.array([np.mean(by_iter[i]) for i in iters]), np.array([np.std(by_iter[i]) for i in iters]))
+
+
+def official_mean(results, fn):
+    """iter の無い重み（official など）の全画像の平均。{ラベル: 平均}"""
+    vals = {}
+    for rows in results.values():
+        for label, it, m in rows:
+            if it is None:
+                vals.setdefault(label, []).append(fn(m))
+    return {k: float(np.mean(v)) for k, v in vals.items()}
+
+
 def plot_curves(path, results, ratio):
-    """results: {画像名: [(label, iter or None, metrics), ...]}"""
-    metrics = [
-        ('Differing craters (SR-only + GT-only)', lambda m: m['sr_only_count'] + m['gt_only_count']),
-        ('Differing area [px] (SR-only + GT-only)', lambda m: m['sr_only_px'] + m['gt_only_px']),
-        ('Mask IoU with GT mask', lambda m: m['mask_iou']),
-    ]
-    fig, axes = plt.subplots(1, len(metrics), figsize=(6 * len(metrics), 4.5))
-    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    for ci, (stem, rows) in enumerate(results.items()):
-        color = colors[ci % len(colors)]
-        curve = sorted((r for r in rows if r[1] is not None), key=lambda r: r[1])
-        for ax, (title, fn) in zip(axes, metrics):
-            ax.plot([r[1] for r in curve], [fn(r[2]) for r in curve], marker='o', color=color, label=stem)
-            for r in rows:
-                if r[1] is None:  # 公式の重みなどは横線で示す
-                    ax.axhline(fn(r[2]), color=color, linestyle='--', alpha=0.6, label=f'{stem} ({r[0]})')
-    for ax, (title, _) in zip(axes, metrics):
+    """results: {画像名: [(label, iter or None, metrics), ...]}。画像ごとの薄い線と、全画像の平均（太線＋帯）を描く。"""
+    fig, axes = plt.subplots(1, len(METRICS), figsize=(6 * len(METRICS), 4.5))
+    few = len(results) <= 5  # 枚数が少ないときだけ、画像ごとの凡例を出す
+    for ax, (title, fn) in zip(axes, METRICS):
+        for stem, rows in results.items():
+            curve = sorted((r for r in rows if r[1] is not None), key=lambda r: r[1])
+            ax.plot([r[1] for r in curve], [fn(r[2]) for r in curve], color='gray' if not few else None,
+                    alpha=0.25 if not few else 0.8, linewidth=1, label=stem if few else None)
+        iters, mean, std = mean_curve(results, fn)
+        ax.fill_between(iters, mean - std, mean + std, color='tab:red', alpha=0.12)
+        ax.plot(iters, mean, color='tab:red', marker='o', linewidth=2.5, label=f'mean of {len(results)} images (±1 std)')
+        for label, v in official_mean(results, fn).items():
+            ax.axhline(v, color='black', linestyle='--', alpha=0.7, label=f'{label} (mean)')
         ax.set_title(title)
         ax.set_xlabel('iter')
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
-    fig.suptitle(f'Crater-mask difference between SR and GT (overlap ratio threshold {ratio})')
+    fig.suptitle(f'Crater-mask difference between SR and GT (overlap ratio threshold {ratio}, {len(results)} images)')
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -91,6 +116,9 @@ def main():
         raise SystemExit(f'画像フォルダがありません。先に compare_checkpoints.py を実行してください: {args.compare_dir}')
 
     detector = OriginalCNN()
+    total = sum(len([f for f in glob.glob(os.path.join(args.compare_dir, st, '*.png'))
+                     if not os.path.basename(f).startswith('diff_')]) for st in stems)
+    progress = Progress(total, '評価')
     results, csv_rows = {}, []
     for stem in stems:
         gt_path = find_gt(args.gt_dir, stem)
@@ -112,7 +140,7 @@ def main():
                 gt_r, gt_mask_r = gt, gt_mask
             m = compare_masks(detector.forward(sr), gt_mask_r, args.ratio)
             rows.append((label, label_to_iter(label), m))
-            print(f'{stem} {label}: SR-only {m["sr_only_count"]}, GT-only {m["gt_only_count"]}, IoU {m["mask_iou"]:.3f}')
+            progress.step(f'{stem} {label}: SR-only {m["sr_only_count"]}, GT-only {m["gt_only_count"]}, IoU {m["mask_iou"]:.3f}')
             if not args.no_save_images:
                 out = overlay_mask_on_image(gt_r, m['sr_only_mask'], color=(0, 0, 255), alpha=0.15)
                 out = overlay_mask_on_image(out, m['gt_only_mask'], color=(0, 255, 0), alpha=0.15)
@@ -124,6 +152,11 @@ def main():
 
     if not csv_rows:
         raise SystemExit('評価する画像がありませんでした')
+    keys = [k for k in csv_rows[0] if k not in ('image', 'weight', 'iter')]
+    for label in dict.fromkeys(r['weight'] for r in csv_rows):  # 重みごとの全画像の平均
+        same = [r for r in csv_rows if r['weight'] == label]
+        csv_rows.append({'image': 'MEAN', 'weight': label, 'iter': same[0]['iter'],
+                         **{k: round(float(np.mean([r[k] for r in same])), 4) for k in keys}})
     with open(os.path.join(args.compare_dir, 'mask_metrics.csv'), 'w', newline='') as f:
         wr = csv.DictWriter(f, fieldnames=list(csv_rows[0].keys()))
         wr.writeheader()

@@ -211,6 +211,9 @@ python scripts/compare_checkpoints.py
 # 重みを絞る（おすすめ）
 python scripts/compare_checkpoints.py --iters 10000 50000 100000 150000
 
+# 多くの画像で平均を見る（50 枚。比較画像は最初の 2 枚だけ作る）
+python scripts/compare_checkpoints.py --num 50 --grid_num 2
+
 # 画像を指定し、中央 256px を拡大して見る
 python scripts/compare_checkpoints.py --images 0001 0002 --crop 256
 
@@ -222,14 +225,15 @@ python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 
 - `compare_<画像名>.png`: LQ・各重みの出力・GT を並べた画像（タイトルに PSNR）
 - `<画像名>/<重み名>.png`: 各重みの出力画像
-- `psnr.csv`: 画像ごと・重みごとの PSNR（GT があるとき）
+- `psnr.csv`: 画像ごと・重みごとの PSNR（GT があるとき）。最後の `MEAN` の行が全画像の平均
 
 | オプション | 既定値 | 意味 |
 |---|---|---|
 | `--exp` | `experiments/finetune_RealESRGANx2plus` | 実験フォルダ |
 | `--lq_dir` / `--gt_dir` | `dataset/val/lq` / `dataset/val/gt` | val の画像フォルダ（GT が無ければ PSNR は出さない） |
 | `--images` | （ランダム） | 使う画像名（拡張子なし） |
-| `--num` / `--seed` | `2` / `0` | ランダムに選ぶ枚数と乱数の種（種が同じなら同じ画像） |
+| `--num` / `--seed` | `2` / `0` | ランダムに選ぶ枚数と乱数の種（種が同じなら同じ画像）。平均を見るなら 20〜50 くらい |
+| `--grid_num` | `2` | 並べた比較画像を作る枚数（先頭からこの枚数だけ。他の画像も出力と PSNR は保存される） |
 | `--iters` | （全部） | 比較する iter |
 | `--official` | なし | 公式の重みのパス |
 | `--scale` | `2` | 倍率（x4 の実験なら `4`、`--exp` も変える） |
@@ -239,6 +243,7 @@ python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 | `--output` | `<exp>/compare` | 出力先 |
 
 - `--iters` を省略すると 5k 刻みで全部（30 個）を処理するので、比較画像が大きくなります
+- 処理中は、進み具合と残り時間の目安（`[超解像 12/60] ... 残り約 8分`）が 1 枚ごとに出ます。枚数が多いときの目安にしてください
 - 重みは学習時の val と同じ `params_ema` を読み込みます
 
 ## 重みごとの障害物検出の違いを線グラフにする（`scripts/evaluate_checkpoints_mask.py`）
@@ -262,11 +267,11 @@ python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
 
 `experiments/<name>/compare/` に次が保存されます。
 
-- `mask_diff_curves.png`: iter ごとの線グラフ（画像ごとに 1 本。公式の重みは横の点線）
+- `mask_diff_curves.png`: iter ごとの線グラフ。画像ごとの薄い線と、**全画像の平均（赤の太線）とばらつき（±1 標準偏差の帯）**。公式の重みは平均の横の点線
   - 違う塊（クレーター）の数（SR のみ + GT のみ）
   - 違う塊の面積（px）
   - GT のマスクとの IoU（高いほど GT に近い）
-- `mask_metrics.csv`: 画像 × 重みの数値
+- `mask_metrics.csv`: 画像 × 重みの数値（`image` が `MEAN` の行が、重みごとの全画像の平均）
 - `<画像名>/diff_<重み名>.png`: 差分を重ねた画像（赤: SR のみ、緑: GT のみ）
 
 | オプション | 既定値 | 意味 |
@@ -277,7 +282,8 @@ python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
 | `--no-save-images` | なし | 差分を重ねた画像を保存しない |
 
 - 検出は先行研究の方法（`evaluate.py`）をそのまま使っています。「違う塊」は、他方のマスクとの重なり割合が `--ratio` 以下の塊です
-- 画像が少ないと線が揺れるので、`compare_checkpoints.py` の `--num` で枚数を増やしてください
+- 画像が少ないと線が揺れるので、`compare_checkpoints.py` の `--num` で枚数を増やして平均を見てください（20 枚以上がおすすめ）
+- 処理中は、進み具合と残り時間の目安が出ます
 
 ---
 
