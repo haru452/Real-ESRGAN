@@ -80,6 +80,10 @@ python scripts/generate_val_lq.py --mode bicubic --scale 2
 
 学習ログから PSNR・損失・学習率のグラフを画像で保存します。使い方は下の「学習の様子をグラフで見る」を参照。
 
+### 8. 途中保存の重みを見比べるスクリプトを追加（`scripts/compare_checkpoints.py`）
+
+途中保存の重みごとに val の画像を超解像して、並べた比較画像を作ります。使い方は下の「途中保存の重みを見比べる」を参照。
+
 ---
 
 ## 使い方（学習の流れ）
@@ -187,6 +191,51 @@ ssh -L 6006:localhost:6006 <ユーザー名>@<サーバー>
 - PSNR は 1 万 iter ごとにしか記録されません（`val_freq`）
 - GAN の学習では、見た目が良くなっても PSNR が下がることがあります。最終的には、途中保存の重みで実際に超解像した画像を見比べて選んでください
 - `l_g_gan` と `l_d_*` は上下に揺れ続けるのが普通です。どれかが 0 付近に張り付いたら、学習がうまくいっていないサインです
+
+---
+
+## 途中保存の重みを見比べる（`scripts/compare_checkpoints.py`）
+
+GAN の学習では PSNR が下がっても見た目が良くなることがあるので、重みごとに同じ画像を超解像して目で比べます。
+
+`experiments/<name>/models/net_g_*.pth` を 1 つずつ読み込み、val の LQ 画像（既定は 2 枚）を超解像します。
+
+```bash
+# x2（既定）: 全部の重みで、ランダムな 2 枚
+python scripts/compare_checkpoints.py
+
+# 重みを絞る（おすすめ）
+python scripts/compare_checkpoints.py --iters 10000 50000 100000 150000
+
+# 画像を指定し、中央 256px を拡大して見る
+python scripts/compare_checkpoints.py --images 0001 0002 --crop 256
+
+# 公式の重みも並べる
+python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
+```
+
+出力は `experiments/<name>/compare/` に保存されます。
+
+- `compare_<画像名>.png`: LQ・各重みの出力・GT を並べた画像（タイトルに PSNR）
+- `<画像名>/<重み名>.png`: 各重みの出力画像
+- `psnr.csv`: 画像ごと・重みごとの PSNR（GT があるとき）
+
+| オプション | 既定値 | 意味 |
+|---|---|---|
+| `--exp` | `experiments/finetune_RealESRGANx2plus` | 実験フォルダ |
+| `--lq_dir` / `--gt_dir` | `dataset/val/lq` / `dataset/val/gt` | val の画像フォルダ（GT が無ければ PSNR は出さない） |
+| `--images` | （ランダム） | 使う画像名（拡張子なし） |
+| `--num` / `--seed` | `2` / `0` | ランダムに選ぶ枚数と乱数の種（種が同じなら同じ画像） |
+| `--iters` | （全部） | 比較する iter |
+| `--official` | なし | 公式の重みのパス |
+| `--scale` | `2` | 倍率（x4 の実験なら `4`、`--exp` も変える） |
+| `--cols` | `3` | 比較画像の列数 |
+| `--crop` | `0` | 中央を切り出す大きさ（px）。`0` で全体 |
+| `--tile` | `0` | タイルサイズ。GPU メモリ不足のとき `256` など |
+| `--output` | `<exp>/compare` | 出力先 |
+
+- `--iters` を省略すると 5k 刻みで全部（30 個）を処理するので、比較画像が大きくなります
+- 重みは学習時の val と同じ `params_ema` を読み込みます
 
 ---
 
