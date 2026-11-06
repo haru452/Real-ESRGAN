@@ -202,17 +202,17 @@ ssh -L 6006:localhost:6006 <ユーザー名>@<サーバー>
 
 GAN の学習では PSNR が下がっても見た目が良くなることがあるので、重みごとに同じ画像を超解像して目で比べます。
 
-`experiments/<name>/models/net_g_*.pth` を 1 つずつ読み込み、val の LQ 画像（既定は 2 枚）を超解像します。
+`experiments/<name>/models/net_g_*.pth` を 1 つずつ読み込み、val の LQ 画像（既定は 5 枚）を超解像します。
 
 ```bash
-# x2（既定）: 全部の重みで、ランダムな 2 枚
+# x2（既定）: 全部の重みで、ランダムな 5 枚
 python scripts/compare_checkpoints.py
 
 # 重みを絞る（おすすめ）
 python scripts/compare_checkpoints.py --iters 10000 50000 100000 150000
 
-# 多くの画像で平均を見る（50 枚。比較画像は最初の 2 枚だけ作る）
-python scripts/compare_checkpoints.py --num 50 --grid_num 2
+# 多くの画像で平均を見る（50 枚。比較画像は最初の 5 枚だけ作る）
+python scripts/compare_checkpoints.py --num 50 --grid_num 5
 
 # 画像を指定し、中央 256px を拡大して見る
 python scripts/compare_checkpoints.py --images 0001 0002 --crop 256
@@ -232,8 +232,8 @@ python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
 | `--exp` | `experiments/finetune_RealESRGANx2plus` | 実験フォルダ |
 | `--lq_dir` / `--gt_dir` | `dataset/val/lq` / `dataset/val/gt` | val の画像フォルダ（GT が無ければ PSNR は出さない） |
 | `--images` | （ランダム） | 使う画像名（拡張子なし） |
-| `--num` / `--seed` | `2` / `0` | ランダムに選ぶ枚数と乱数の種（種が同じなら同じ画像）。平均を見るなら 20〜50 くらい |
-| `--grid_num` | `2` | 並べた比較画像を作る枚数（先頭からこの枚数だけ。他の画像も出力と PSNR は保存される） |
+| `--num` / `--seed` | `5` / `0` | ランダムに選ぶ枚数と乱数の種（種が同じなら同じ画像）。平均を見るなら 20〜50 くらい |
+| `--grid_num` | `5` | 並べた比較画像を作る枚数（先頭からこの枚数だけ。他の画像も出力と PSNR は保存される） |
 | `--iters` | （全部） | 比較する iter |
 | `--official` | なし | 公式の重みのパス |
 | `--scale` | `2` | 倍率（x4 の実験なら `4`、`--exp` も変える） |
