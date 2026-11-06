@@ -92,6 +92,10 @@ python scripts/generate_val_lq.py --mode bicubic --scale 2
 
 先行研究の障害物検出を SR 画像と GT 画像にかけ、マスクの違いを重みごとに線グラフにします。使い方は下の「重みごとの障害物検出の違いを線グラフにする」を参照。
 
+### 10. 縁のシャープさを調べるスクリプトを追加（`scripts/evaluate_edge_sharpness.py`）
+
+超解像で、なだらかな縁（degraded なクレーター）がくっきりした縁（fresh）に見えていないかを、GT と比べて調べます。使い方は下の「縁のシャープさで fresh に見えていないかを調べる」を参照。
+
 ---
 
 ## 使い方（学習の流れ）
@@ -293,6 +297,44 @@ python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
 - 検出は先行研究の方法（`evaluate.py`）をそのまま使っています。「違う塊」は、他方のマスクとの重なり割合が `--ratio` 以下の塊です
 - 画像が少ないと線が揺れるので、`compare_checkpoints.py` の `--num` で枚数を増やして平均を見てください（20 枚以上がおすすめ）
 - 処理中は、進み具合と残り時間の目安が出ます
+
+---
+
+## 縁のシャープさで fresh に見えていないかを調べる（`scripts/evaluate_edge_sharpness.py`）
+
+GAN の超解像は高周波を足すので、degraded（縁がなだらか）なクレーターが fresh（縁がくっきり）に見えることがあります。
+マスクの重なりでは測れないので、クレーターの縁の勾配の強さを GT と比べます。
+
+```bash
+# 先に compare_checkpoints.py を実行しておく（公式の重みも並べると、差のグラフも作れる）
+python scripts/evaluate_edge_sharpness.py
+python scripts/evaluate_edge_sharpness.py --tol 0.2 --min_area 50
+```
+
+**やり方**
+1. GT から障害物検出でマスクを作り、縁のあたり（マスクを少し太らせた領域）を塊（クレーター）ごとに分ける
+2. 塊ごとに、勾配の強さ（Sobel）の平均を GT と SR で測り、**比 = SR / GT** を出す
+3. 画像ごとに、比の中央値と、くっきりした塊の割合・ぼやけた塊の割合を出す
+
+**見方**
+- 比が **1 より大きい**: SR のほうがくっきり（fresh 寄り）。1 より小さい: ぼやけている
+- 「くっきりした塊の割合」が大きいほど、fresh に見える塊が多い（比が 1 + `--tol` を超えた塊の割合）
+- 点線は基準: `official`（公式の重み）と `bicubic`（LQ を bicubic で拡大したもの。`dataset/val/lq` があるとき）
+- GT で勾配が強い場所を選んで測るので、どの重みでも比が少し低めに出ます。重み同士の違いや、点線との差を見てください
+
+出力は `experiments/<name>/compare/` に保存されます。
+
+- `edge_sharpness_curves.png`: iter ごとの線グラフ（上の段: 値そのもの、下の段: 公式との差。画像ごとの薄い線と全画像の平均）
+- `edge_sharpness.csv`: 画像 × 重みの数値（`MEAN` の行が全画像の平均）
+
+| オプション | 既定値 | 意味 |
+|---|---|---|
+| `--compare_dir` | `experiments/finetune_RealESRGANx2plus1106/compare` | `compare_checkpoints.py` の出力 |
+| `--gt_dir` / `--lq_dir` | `dataset/val/gt` / `dataset/val/lq` | GT と LQ のフォルダ（LQ が無ければ bicubic は並べない） |
+| `--baseline` | `official` | この重みとの差を下の段に描く |
+| `--tol` | `0.1` | 比が 1 ± tol を超えたら「くっきり／ぼやけた」と数える |
+| `--min_area` | `30` | これより小さい塊は除く（px） |
+| `--dilate` | `2` | マスクを太らせる半径（px） |
 
 ---
 

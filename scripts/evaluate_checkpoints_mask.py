@@ -83,14 +83,15 @@ def mean_curve(table):
     return iters, vals.mean(axis=0), vals.std(axis=0)
 
 
-def plot_curves(path, results, ratio, baseline=None):
+def plot_curves(path, results, suptitle, baseline=None, metrics=METRICS, ref_line=None):
     """上の段: 値そのもの。下の段（baseline があるとき）: baseline との差。どちらも画像ごとの薄い線と全画像の平均（太線＋帯）。"""
     has_base = baseline is not None and any(label == baseline for rows in results.values() for label, _, _ in rows)
+    metrics = list(metrics)
     modes = [(None, 'raw')] + ([(baseline, f'minus {baseline}')] if has_base else [])
-    fig, axes = plt.subplots(len(modes), len(METRICS), figsize=(6 * len(METRICS), 4.5 * len(modes)), squeeze=False)
+    fig, axes = plt.subplots(len(modes), len(metrics), figsize=(6 * len(metrics), 4.5 * len(modes)), squeeze=False)
     few = len(results) <= 5  # 枚数が少ないときだけ、画像ごとの凡例を出す
     for r, (base, tag) in enumerate(modes):
-        for ax, (title, fn) in zip(axes[r], METRICS):
+        for ax, (title, fn) in zip(axes[r], metrics):
             table, fixed = value_table(results, fn, base)
             for stem, vals in table.items():
                 its = sorted(vals)
@@ -101,6 +102,8 @@ def plot_curves(path, results, ratio, baseline=None):
             ax.plot(iters, mean, color='tab:red', marker='o', linewidth=2.5,
                     label=f'mean of {len(table)} images (±1 std)')
             if base is None:
+                if ref_line is not None:
+                    ax.axhline(ref_line, color='gray', linestyle=':', alpha=0.8)
                 for label in {k for v in fixed.values() for k in v}:
                     ax.axhline(np.mean([v[label] for v in fixed.values() if label in v]), color='black',
                                linestyle='--', alpha=0.7, label=f'{label} (mean)')
@@ -110,7 +113,7 @@ def plot_curves(path, results, ratio, baseline=None):
             ax.set_xlabel('iter')
             ax.grid(alpha=0.3)
             ax.legend(fontsize=8)
-    fig.suptitle(f'Crater-mask difference between SR and GT (overlap ratio threshold {ratio}, {len(results)} images)')
+    fig.suptitle(suptitle)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -184,7 +187,9 @@ def main():
         print(f'注意: 画像によって iter の集合が違います（古い結果が混ざっていませんか）。平均は共通の {len(common)} 個の iter だけで取ります')
     if not any(label == args.baseline for rows in results.values() for label, _, _ in rows):
         print(f'注意: baseline "{args.baseline}" が無いので、差のグラフは作りません（compare_checkpoints.py に --official を付けて作り直すと作れます）')
-    plot_curves(os.path.join(args.compare_dir, 'mask_diff_curves.png'), results, args.ratio, args.baseline)
+    plot_curves(os.path.join(args.compare_dir, 'mask_diff_curves.png'), results,
+                f'Crater-mask difference between SR and GT (overlap ratio threshold {args.ratio}, {len(results)} images)',
+                args.baseline)
     print('保存先:', args.compare_dir)
 
 
