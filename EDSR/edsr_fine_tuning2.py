@@ -49,6 +49,7 @@ import glob
 import math
 import os
 import random
+import time
 
 import cv2
 import numpy as np
@@ -57,6 +58,16 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
 from edsr_val import ValLogger, ValSet, evaluate
+
+
+def format_seconds(sec):
+    """秒を「1時間23分」「4分05秒」のような読みやすい形にする。"""
+    sec = int(round(sec))
+    h, rem = divmod(sec, 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h}時間{m:02d}分"
+    return f"{m}分{sec:02d}秒"
 
 
 # ======================
@@ -369,6 +380,7 @@ def main():
         torch.save(model.state_dict(), best_path)
 
     print(f"[3/4] 学習開始 (device={args.device})")
+    train_start = time.time()
     for epoch in range(1, args.epochs + 1):
         model.train()
         epoch_loss, n_batches = 0.0, 0
@@ -396,6 +408,12 @@ def main():
                 best_psnr = val_psnr
                 torch.save(model.state_dict(), best_path)
                 msg += "  (best 更新)"
+
+        # 残り時間の目安: ここまでの 1 エポックあたりの平均（val の時間も含む）× 残りエポック数
+        elapsed = time.time() - train_start
+        remain = elapsed / epoch * (args.epochs - epoch)
+        finish = time.strftime('%m/%d %H:%M', time.localtime(time.time() + remain))
+        msg += f"  | 経過 {format_seconds(elapsed)}  残り約 {format_seconds(remain)} (終了予定 {finish})"
         print(msg)
 
         if epoch % args.save_every == 0 or epoch == args.epochs:
