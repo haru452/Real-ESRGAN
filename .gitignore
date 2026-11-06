@@ -139,3 +139,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Claude Code (会話の履歴やログ)
+.claude/
