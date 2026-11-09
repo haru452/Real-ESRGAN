@@ -16,6 +16,56 @@ python scripts/evaluate_edge_sharpness.py --detector filter
 
 2 と 3 は、1 の出力（`<exp>/compare/<画像名>/<重み名>.png`）を読みます。
 
+## フォルダの指定
+
+何も付けなければ、既定のフォルダ（val）を使います。
+
+| スクリプト | 引数 | 既定 | 中身 |
+|---|---|---|---|
+| `compare_checkpoints.py` | `--exp` | `experiments/finetune_RealESRGANx2plus1106` | 重み（`models/net_g_*.pth`）のある実験フォルダ |
+| | `--lq_dir` | `dataset/val/lq` | 超解像する低解像度画像 |
+| | `--gt_dir` | `dataset/val/gt` | GT（元の高解像度画像） |
+| | `--output` | `<exp>/compare` | SR 画像の出力先 |
+| 評価の 2 つ | `--compare_dir` | `<exp>/compare` | `compare_checkpoints.py` の `--output` と同じフォルダ。結果もここに保存されます |
+| | `--gt_dir` | `dataset/val/gt` | GT |
+| | `--lq_dir` | `dataset/val/lq` | 低解像度画像。`filter` のときは、ここと `--gt_dir` の xlsx を読みます |
+
+評価の 2 つのスクリプトには、同じフォルダを指定してください。
+
+## val・train に入っていない画像で評価する
+
+フォルダの指定を変えるだけです。評価には **GT（元の高解像度画像）が必要**です。
+以下は `dataset/test` に置く場合の例です。
+
+1. **画像を置く**
+   - 高解像度画像を `dataset/test/gt/` に入れます。名前には Product ID を入れます（例 `M1101052726LE_crop03.tif`）。
+   - QuickMap の xlsx も `dataset/test/gt/`（または `dataset/test/lq/`）に入れます。
+
+2. **低解像度画像を作る**：学習と同じ劣化をかけます。
+   ```bash
+   python scripts/generate_val_lq.py --gt dataset/test/gt --lq dataset/test/lq
+   ```
+   低解像度画像がすでにあれば、GT と同じ名前で `dataset/test/lq/` に置けば、この手順は要りません。
+
+3. **超解像する**
+   ```bash
+   python scripts/compare_checkpoints.py --lq_dir dataset/test/lq --gt_dir dataset/test/gt \
+       --output experiments/finetune_RealESRGANx2plus1106/compare_test --num 1000 \
+       --official weights/RealESRGAN_x2plus.pth
+   ```
+   - `--num` の既定は 5 で、5 枚だけをランダムに選びます。全部使うなら、枚数より大きい値を渡します。
+   - `--output` を分けると、val の結果と混ざりません。
+
+4. **評価する**
+   ```bash
+   python scripts/evaluate_checkpoints_mask.py --detector filter \
+       --compare_dir experiments/finetune_RealESRGANx2plus1106/compare_test \
+       --gt_dir dataset/test/gt --lq_dir dataset/test/lq
+   python scripts/evaluate_edge_sharpness.py --detector filter \
+       --compare_dir experiments/finetune_RealESRGANx2plus1106/compare_test \
+       --gt_dir dataset/test/gt --lq_dir dataset/test/lq
+   ```
+
 ## 検出器の選び方（`--detector`）
 
 | 値 | 中身 | ファイル |
