@@ -57,7 +57,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
-from edsr_val import ValLogger, ValSet, evaluate
+from edsr_compare import Comparer
+from edsr_val import ValLogger, ValSet, evaluate, evaluate_bicubic
 
 
 def format_seconds(sec):
@@ -68,6 +69,11 @@ def format_seconds(sec):
     if h:
         return f"{h}時間{m:02d}分"
     return f"{m}分{sec:02d}秒"
+
+
+def format_metrics(m):
+    return (f"val_loss={m['l1']:.4f}  val_psnr={m['psnr']:.3f} dB  "
+            f"val_ssim={m['ssim']:.4f}  bias={m['bias']:+.2f}")
 
 
 # ======================
@@ -219,6 +225,21 @@ def get_args():
                         help='val_metrics.csv / training_curves.png / checkpoint_best.pt の保存先')
     parser.add_argument('--export_weights', choices=['best', 'last'], default='best',
                         help='ONNX に書き出す重み (best: val PSNR 最良 / last: 最後のエポック)')
+    parser.add_argument('--lr_schedule', choices=['cosine', 'step', 'none'], default='cosine',
+                        help='学習率の下げ方 (cosine: --epochs で --lr_min まで滑らかに / '
+                             'step: --lr_step エポックごとに --lr_gamma 倍 / none: 固定)')
+    parser.add_argument('--lr_min', type=float, default=1e-7, help='cosine のときの最小学習率')
+    parser.add_argument('--lr_step', type=int, default=10, help='step のときの間隔 (エポック)')
+    parser.add_argument('--lr_gamma', type=float, default=0.5, help='step のときの倍率')
+    parser.add_argument('--early_stop', type=int, default=10,
+                        help='val PSNR が --min_delta 以上よくならない状態がこのエポック数続いたら止める '
+                             '(0 で無効。--val_hr_dir が必要)')
+    parser.add_argument('--min_delta', type=float, default=0.01,
+                        help='「よくなった」とみなす val PSNR の最小の上がり幅 (dB)')
+    parser.add_argument('--compare_images', type=int, default=4,
+                        help='比較画像 (bicubic / 学習前 / 学習後 / 正解) を作る val 画像の枚数 (0 で作らない)')
+    parser.add_argument('--compare_crop', type=int, default=128,
+                        help='比較画像で切り出す HR 側の大きさ (画素)')
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     return parser.parse_args()
@@ -364,20 +385,38 @@ def main():
     params = [p for p in model.parameters() if p.requires_grad]  # MeanShift は固定
     optimizer = torch.optim.Adam(params, lr=args.lr)
     criterion = nn.L1Loss()  # EDSR は L1 loss が一般的
+    if args.lr_schedule == 'cosine':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=args.lr_min)
+    elif args.lr_schedule == 'step':
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=args.lr_step, gamma=args.lr_gamma)
+    else:
+        scheduler = None
+    print(f"  学習率: {args.lr:g} (スケジュール: {args.lr_schedule})")
 
-    val_set, val_logger, best_psnr = None, None, -float('inf')
+    val_set, val_logger, comparer = None, None, None
+    best_psnr, best_epoch = -float('inf'), 0
     best_path = os.path.join(args.log_dir, 'checkpoint_best.pt')
     if args.val_hr_dir:
         val_set = ValSet(args.val_hr_dir, args.val_lr_dir, args.scale, args.val_max_images)
-        val_logger = ValLogger(args.log_dir)
         lr_src = args.val_lr_dir or 'bicubic で自動生成'
         print(f"  val: {len(val_set)} 枚 (LR: {lr_src}) を {args.val_every} エポックごとに評価")
-        # 学習前の値 (epoch 0) を基準として記録
-        val_loss, val_psnr = evaluate(model, val_set, args.device)
-        print(f"  epoch    0 (学習前)  val_loss={val_loss:.4f}  val_psnr={val_psnr:.3f} dB")
-        val_logger.add(0, float('nan'), val_loss, val_psnr)
-        best_psnr = val_psnr
+        # 超解像しない場合 (bicubic で拡大しただけ) の値を基準として記録
+        bic = evaluate_bicubic(val_set)
+        print(f"  bicubic (基準)       psnr={bic['psnr']:.3f} dB  ssim={bic['ssim']:.4f}")
+        val_logger = ValLogger(args.log_dir, bicubic=bic)
+        # 学習前の値 (epoch 0)
+        m = evaluate(model, val_set, args.device)
+        print(f"  epoch    0 (学習前)  {format_metrics(m)}")
+        val_logger.add(0, args.lr, float('nan'), m)
+        best_psnr = m['psnr']
         torch.save(model.state_dict(), best_path)
+        if args.compare_images > 0:
+            comparer = Comparer(val_set, args.compare_images, args.compare_crop, args.log_dir)
+            comparer.capture_before(model, args.device)
+    elif args.early_stop:
+        print("  --val_hr_dir が無いので早期終了は使いません")
 
     print(f"[3/4] 学習開始 (device={args.device})")
     train_start = time.time()
@@ -398,16 +437,24 @@ def main():
             n_batches += 1
 
         avg_loss = epoch_loss / max(n_batches, 1)
-        msg = f"  epoch {epoch:4d}/{args.epochs}  loss={avg_loss:.4f}"
+        cur_lr = optimizer.param_groups[0]['lr']
+        msg = f"  epoch {epoch:4d}/{args.epochs}  lr={cur_lr:.2e}  loss={avg_loss:.4f}"
+        if scheduler is not None:
+            scheduler.step()
 
+        stop = False
         if val_set is not None and (epoch % args.val_every == 0 or epoch == args.epochs):
-            val_loss, val_psnr = evaluate(model, val_set, args.device)
-            msg += f"  val_loss={val_loss:.4f}  val_psnr={val_psnr:.3f} dB"
-            val_logger.add(epoch, avg_loss, val_loss, val_psnr)
-            if val_psnr > best_psnr:
-                best_psnr = val_psnr
+            m = evaluate(model, val_set, args.device)
+            msg += f"  {format_metrics(m)}"
+            val_logger.add(epoch, cur_lr, avg_loss, m)
+            if m['psnr'] > best_psnr:
+                if m['psnr'] >= best_psnr + args.min_delta:
+                    best_epoch = epoch  # 早期終了の判定は min_delta 以上の改善だけ数える
+                best_psnr = m['psnr']
                 torch.save(model.state_dict(), best_path)
                 msg += "  (best 更新)"
+            if args.early_stop and epoch - best_epoch >= args.early_stop:
+                stop = True
 
         # 残り時間の目安: ここまでの 1 エポックあたりの平均（val の時間も含む）× 残りエポック数
         elapsed = time.time() - train_start
@@ -416,17 +463,26 @@ def main():
         msg += f"  | 経過 {format_seconds(elapsed)}  残り約 {format_seconds(remain)} (終了予定 {finish})"
         print(msg)
 
-        if epoch % args.save_every == 0 or epoch == args.epochs:
+        if epoch % args.save_every == 0 or epoch == args.epochs or stop:
             ckpt_path = f"checkpoint_epoch{epoch}.pt"
             torch.save(model.state_dict(), ckpt_path)  # .pt 入力時は EDSR-PyTorch 互換
             print(f"    -> チェックポイント保存: {ckpt_path}")
 
+        if stop:
+            print(f"  早期終了: {args.early_stop} エポックの間、val PSNR が "
+                  f"{args.min_delta} dB 以上よくならなかったので止めます (epoch {epoch})")
+            break
+
     if val_set is not None:
-        print(f"  val PSNR 最良: {best_psnr:.3f} dB -> {best_path}")
+        print(f"  val PSNR 最良: {best_psnr:.3f} dB (bicubic より "
+              f"{best_psnr - val_logger.bicubic['psnr']:+.3f} dB) -> {best_path}")
         print(f"  グラフ: {val_logger.png_path} / 表: {val_logger.csv_path}")
         if args.export_weights == 'best':
             model.load_state_dict(torch.load(best_path, map_location=args.device))
             print("  ONNX には val PSNR が最良の重みを書き出します")
+        if comparer is not None:
+            paths = comparer.save_after(model, args.device, tag=args.export_weights)
+            print(f"  比較画像 ({len(paths)} 枚): {comparer.out_dir}")
 
     print(f"[4/4] ONNX へエクスポート中: {args.output_path}")
     model.eval()

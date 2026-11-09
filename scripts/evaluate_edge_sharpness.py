@@ -19,6 +19,9 @@ LQ 画像が見つかれば、bicubic で拡大したもの（'bicubic'）も基
 使い方:
     python scripts/evaluate_edge_sharpness.py
     python scripts/evaluate_edge_sharpness.py --tol 0.2 --min_area 50
+    python scripts/evaluate_edge_sharpness.py --detector filter   # 太陽の向きを使うフィルター検出（lroc_filters.py）
+
+--detector filter のときは、クレーターの縁（円周）を塊として使い、出力の名前に _filter が付く。
 """
 import argparse
 import csv
@@ -29,7 +32,7 @@ import cv2
 import matplotlib
 import numpy as np
 
-from crater_mask import OriginalCNN
+from crater_mask import add_detector_args, build_detector
 from evaluate_checkpoints_mask import IMG_EXTS, find_gt, label_to_iter, plot_curves
 from progress import Progress
 
@@ -99,7 +102,9 @@ def main():
     p.add_argument('--tol', type=float, default=0.1, help='比が 1±tol を超えたら「くっきり／ぼやけた」と数える')
     p.add_argument('--min_area', type=int, default=30, help='これより小さい塊は、ノイズが大きいので除く（px）')
     p.add_argument('--dilate', type=int, default=2, help='マスクを太らせる半径（px）')
+    add_detector_args(p)
     args = p.parse_args()
+    tag = '' if args.detector == 'original' else f'_{args.detector}'
 
     stems = sorted(d for d in os.listdir(args.compare_dir) if os.path.isdir(os.path.join(args.compare_dir, d)))
     if not stems:
@@ -109,7 +114,7 @@ def main():
         return [f for f in sorted(glob.glob(os.path.join(args.compare_dir, stem, '*.png')))
                 if not os.path.basename(f).startswith('diff_')]
 
-    detector = OriginalCNN()
+    detector = build_detector(args)
     progress = Progress(sum(len(sr_files(st)) + 1 for st in stems), '縁の評価')
     results, csv_rows = {}, []
     for stem in stems:
@@ -118,7 +123,12 @@ def main():
             print(f'GT が見つからないので飛ばします: {stem}')
             continue
         gt = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE)
-        labels, n, area = crater_regions(detector.forward(gt), args.dilate, args.min_area)
+        try:
+            gt_mask = detector.mask(gt, stem, outline=True)
+        except KeyError as e:  # filter でメタデータが見つからないとき
+            print(f'メタデータが無いので飛ばします: {e}')
+            continue
+        labels, n, area = crater_regions(gt_mask, args.dilate, args.min_area)
         gt_sharp = sharpness_per_crater(gradient_magnitude(gt), labels, n, area)
 
         images = [(os.path.splitext(os.path.basename(f))[0], cv2.imread(f, cv2.IMREAD_GRAYSCALE)) for f in sr_files(stem)]
@@ -146,15 +156,15 @@ def main():
         same = [r for r in csv_rows if r['weight'] == label and r['image'] != 'MEAN']
         csv_rows.append({'image': 'MEAN', 'weight': label, 'iter': same[0]['iter'],
                          **{k: round(float(np.nanmean([r[k] for r in same])), 4) for k in keys}})
-    with open(os.path.join(args.compare_dir, 'edge_sharpness.csv'), 'w', newline='') as f:
+    with open(os.path.join(args.compare_dir, f'edge_sharpness{tag}.csv'), 'w', newline='') as f:
         wr = csv.DictWriter(f, fieldnames=list(csv_rows[0].keys()))
         wr.writeheader()
         wr.writerows(csv_rows)
 
     if not any(label == args.baseline for rows in results.values() for label, _, _ in rows):
         print(f'注意: baseline "{args.baseline}" が無いので、差のグラフは作りません')
-    plot_curves(os.path.join(args.compare_dir, 'edge_sharpness_curves.png'), results,
-                f'Edge sharpness of craters, SR vs GT (tol {args.tol}, {len(results)} images)',
+    plot_curves(os.path.join(args.compare_dir, f'edge_sharpness_curves{tag}.png'), results,
+                f'Edge sharpness of craters, SR vs GT [{args.detector}] (tol {args.tol}, {len(results)} images)',
                 args.baseline, metrics=METRICS, ref_line=None)
     print('保存先:', args.compare_dir)
 

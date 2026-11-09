@@ -13,6 +13,9 @@ compare_checkpoints.py の出力（<exp>/compare/<画像名>/<重み名>.png）�
 使い方:
     python scripts/evaluate_checkpoints_mask.py
     python scripts/evaluate_checkpoints_mask.py --ratio 0.5 --no-save-images
+    python scripts/evaluate_checkpoints_mask.py --detector filter   # 太陽の向きを使うフィルター検出（lroc_filters.py）
+
+--detector filter のときは、出力の名前に _filter が付く（mask_metrics_filter.csv など）。元の結果は上書きしない。
 """
 import argparse
 import csv
@@ -24,7 +27,7 @@ import cv2
 import matplotlib
 import numpy as np
 
-from crater_mask import OriginalCNN, compare_masks, overlay_mask_on_image
+from crater_mask import add_detector_args, build_detector, compare_masks, overlay_mask_on_image
 from progress import Progress
 
 matplotlib.use('Agg')
@@ -125,17 +128,21 @@ def main():
     p.add_argument('--compare_dir', default=os.path.join(root, 'experiments', 'finetune_RealESRGANx2plus1106', 'compare'),
                    help='compare_checkpoints.py の出力フォルダ')
     p.add_argument('--gt_dir', default=os.path.join(root, 'dataset', 'val', 'gt'), help='GT 画像のフォルダ')
+    p.add_argument('--lq_dir', default=os.path.join(root, 'dataset', 'val', 'lq'),
+                   help='LQ 画像のフォルダ（--detector filter のとき、ここの *.xlsx をメタデータとして使う）')
     p.add_argument('--ratio', type=float, default=0.3, help='重なり割合がこれ以下の塊を「違う塊」とする（元のコードは 0.3）')
     p.add_argument('--baseline', default='official',
                    help='この重みとの差のグラフも作る（下の段）。compare_checkpoints.py に --official を付けて作った official が既定。無ければ作らない')
     p.add_argument('--no-save-images', action='store_true', help='差分を重ねた画像を保存しない')
+    add_detector_args(p)
     args = p.parse_args()
+    tag = '' if args.detector == 'original' else f'_{args.detector}'
 
     stems = sorted(d for d in os.listdir(args.compare_dir) if os.path.isdir(os.path.join(args.compare_dir, d)))
     if not stems:
         raise SystemExit(f'画像フォルダがありません。先に compare_checkpoints.py を実行してください: {args.compare_dir}')
 
-    detector = OriginalCNN()
+    detector = build_detector(args)
     total = sum(len([f for f in glob.glob(os.path.join(args.compare_dir, st, '*.png'))
                      if not os.path.basename(f).startswith('diff_')]) for st in stems)
     progress = Progress(total, '評価')
@@ -146,7 +153,11 @@ def main():
             print(f'GT が見つからないので飛ばします: {stem}')
             continue
         gt = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE)
-        gt_mask = detector.forward(gt)
+        try:
+            gt_mask = detector.mask(gt, stem)
+        except KeyError as e:  # filter でメタデータが見つからないとき
+            print(f'メタデータが無いので飛ばします: {e}')
+            continue
         rows = []
         for sr_path in sorted(glob.glob(os.path.join(args.compare_dir, stem, '*.png'))):
             label = os.path.splitext(os.path.basename(sr_path))[0]
@@ -158,13 +169,13 @@ def main():
                 gt_mask_r = cv2.resize(gt_mask, (sr.shape[1], sr.shape[0]), interpolation=cv2.INTER_NEAREST)
             else:
                 gt_r, gt_mask_r = gt, gt_mask
-            m = compare_masks(detector.forward(sr), gt_mask_r, args.ratio)
+            m = compare_masks(detector.mask(sr, stem, gt.shape), gt_mask_r, args.ratio)
             rows.append((label, label_to_iter(label), m))
             progress.step(f'{stem} {label}: SR-only {m["sr_only_count"]}, GT-only {m["gt_only_count"]}, IoU {m["mask_iou"]:.3f}')
             if not args.no_save_images:
                 out = overlay_mask_on_image(gt_r, m['sr_only_mask'], color=(0, 0, 255), alpha=0.15)
                 out = overlay_mask_on_image(out, m['gt_only_mask'], color=(0, 255, 0), alpha=0.15)
-                cv2.imwrite(os.path.join(args.compare_dir, stem, f'diff_{label}.png'), out)
+                cv2.imwrite(os.path.join(args.compare_dir, stem, f'diff{tag}_{label}.png'), out)
             csv_rows.append({'image': stem, 'weight': label, 'iter': label_to_iter(label) or '',
                              **{k: (round(v, 4) if isinstance(v, float) else v)
                                 for k, v in m.items() if not k.endswith('_mask')}})
@@ -177,7 +188,7 @@ def main():
         same = [r for r in csv_rows if r['weight'] == label]
         csv_rows.append({'image': 'MEAN', 'weight': label, 'iter': same[0]['iter'],
                          **{k: round(float(np.mean([r[k] for r in same])), 4) for k in keys}})
-    with open(os.path.join(args.compare_dir, 'mask_metrics.csv'), 'w', newline='') as f:
+    with open(os.path.join(args.compare_dir, f'mask_metrics{tag}.csv'), 'w', newline='') as f:
         wr = csv.DictWriter(f, fieldnames=list(csv_rows[0].keys()))
         wr.writeheader()
         wr.writerows(csv_rows)
@@ -187,8 +198,8 @@ def main():
         print(f'注意: 画像によって iter の集合が違います（古い結果が混ざっていませんか）。平均は共通の {len(common)} 個の iter だけで取ります')
     if not any(label == args.baseline for rows in results.values() for label, _, _ in rows):
         print(f'注意: baseline "{args.baseline}" が無いので、差のグラフは作りません（compare_checkpoints.py に --official を付けて作り直すと作れます）')
-    plot_curves(os.path.join(args.compare_dir, 'mask_diff_curves.png'), results,
-                f'Crater-mask difference between SR and GT (overlap ratio threshold {args.ratio}, {len(results)} images)',
+    plot_curves(os.path.join(args.compare_dir, f'mask_diff_curves{tag}.png'), results,
+                f'Crater-mask difference between SR and GT [{args.detector}] (overlap ratio threshold {args.ratio}, {len(results)} images)',
                 args.baseline)
     print('保存先:', args.compare_dir)
 
