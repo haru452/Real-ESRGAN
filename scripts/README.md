@@ -9,7 +9,7 @@
 3. `evaluate_edge_sharpness.py` で、クレーターの縁のシャープさを GT と比べます。
 
 ```bash
-python scripts/compare_checkpoints.py --official weights/RealESRGAN_x2plus.pth
+python scripts/compare_checkpoints.py --official experiments/pretrained_models/RealESRGAN_x2plus.pth
 python scripts/evaluate_checkpoints_mask.py --detector filter
 python scripts/evaluate_edge_sharpness.py --detector filter
 ```
@@ -56,7 +56,7 @@ python scripts/evaluate_edge_sharpness.py --detector filter
    ```bash
    python scripts/compare_checkpoints.py --lq_dir dataset/test/lq --gt_dir dataset/test/gt \
        --output experiments/finetune_RealESRGANx2plus1106/compare_test --num 1000 \
-       --official weights/RealESRGAN_x2plus.pth
+       --official experiments/pretrained_models/RealESRGAN_x2plus.pth
    ```
    - `--num` の既定は 5 で、5 枚だけをランダムに選びます。全部使うなら、枚数より大きい値を渡します。
    - `--output` を分けると、val の結果と混ざりません。
