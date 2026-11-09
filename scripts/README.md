@@ -124,6 +124,23 @@ python scripts/evaluate_edge_sharpness.py --detector filter
 | `edge_sharpness[_filter].csv` | 縁のシャープさの比（SR / GT）の中央値など |
 | `edge_sharpness_curves[_filter].png` | その線グラフ |
 
+## best の重みだけを GT と比べて見る（`show_best_mask.py`）
+
+学習ログの val PSNR が最高の重み 1 つだけについて、SR と GT の検出の違いを色で重ねます。
+赤は SR にだけある塊、緑は GT にだけある塊です。左が GT、右が SR に重ねた画像です。
+
+```bash
+python scripts/show_best_mask.py --detector filter \
+    --compare_dir experiments/finetune_RealESRGANx2plus1106/compare_test \
+    --gt_dir dataset/test/gt --lq_dir dataset/test/lq
+```
+
+- best の iter は、`--exp`（既定 `experiments/finetune_RealESRGANx2plus1106`）の `train_*.log` から選びます。
+- 重みを自分で選ぶときは `--weight 85k` のように渡します（`official` も可）。
+- その重みの SR 画像が `--compare_dir` に必要です。`compare_checkpoints.py` で全部の重みを出していれば、そのまま使えます。
+- 出力は `<compare_dir>/best_mask_filter/<画像名>_<重み名>.png` です（`original` なら `best_mask/`）。
+- 色の濃さは `--alpha`（既定 0.35）で変えられます。
+
 ## 例
 
 ```bash
