@@ -7,6 +7,8 @@
 使い方:
     python scripts/generate_val_lq.py --opt options/finetune_realesrgan_x2plus.yml
     python scripts/generate_val_lq.py --scale 2 --mode bicubic   # 単純な縮小だけにする場合
+    python scripts/generate_val_lq.py --gt dataset/test/gt --lq dataset/test/lq --crop
+        # 大きさが倍率で割り切れない GT は、右と下の端を削って使う（GT のファイルも上書きする）
 
 出力ファイル名は高解像度画像と同じにする（PairedImageDataset が同名で組にするため）。
 """
@@ -49,6 +51,13 @@ def write_image(path, tensor, max_val):
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     dtype = np.uint16 if max_val > 255 else np.uint8
     cv2.imwrite(path, (img * max_val).round().astype(dtype))
+
+
+def crop_gt_file(path, h, w):
+    """GT のファイルを、左上から h x w に削って上書きする。チャンネル数と bit 数はそのまま。"""
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if not cv2.imwrite(path, img[:h, :w]):
+        raise IOError(f'書き込めません: {path}')
 
 
 def make_blur_kernel(d, suffix):
@@ -146,6 +155,8 @@ def main():
     parser.add_argument('--mode', choices=['degrade', 'bicubic'], default='degrade',
                         help='degrade: 学習と同じ劣化 / bicubic: 単純な縮小だけ')
     parser.add_argument('--seed', type=int, default=0, help='乱数の種（同じ値なら毎回同じ結果）')
+    parser.add_argument('--crop', action='store_true',
+                        help='大きさが倍率で割り切れない GT は、右と下の端を削って割り切れる大きさにし、GT のファイルも上書きする')
     args = parser.parse_args()
 
     opt = None
@@ -171,8 +182,14 @@ def main():
         h, w = gt.shape[2:4]
         if h % scale or w % scale:
             # 高解像度の大きさが倍率で割り切れないと、検証時に出力と正解の大きさがずれる
-            print(f'[スキップ] {os.path.basename(path)}: {w}x{h} が {scale} で割り切れません')
-            continue
+            if not args.crop:
+                print(f'[スキップ] {os.path.basename(path)}: {w}x{h} が {scale} で割り切れません（--crop で削って使えます）')
+                continue
+            h2, w2 = h - h % scale, w - w % scale
+            crop_gt_file(path, h2, w2)
+            gt = gt[..., :h2, :w2]
+            print(f'[削った] {os.path.basename(path)}: {w}x{h} -> {w2}x{h2}（GT を上書き）')
+            h, w = h2, w2
         lq = degrade(gt, opt, usm) if args.mode == 'degrade' else bicubic(gt, scale)
         out_path = os.path.join(args.lq, os.path.basename(path))
         write_image(out_path, lq, max_val)

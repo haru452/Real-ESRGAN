@@ -43,8 +43,13 @@ python scripts/evaluate_edge_sharpness.py --detector filter
 
 2. **低解像度画像を作る**：学習と同じ劣化をかけます。
    ```bash
-   python scripts/generate_val_lq.py --gt dataset/test/gt --lq dataset/test/lq
+   python scripts/generate_val_lq.py --gt dataset/test/gt --lq dataset/test/lq --crop
    ```
+   - GT の大きさが倍率（x2 なら 2）で割り切れないと、その画像は飛ばされます。
+     `--crop` を付けると、GT の右と下の端を削って割り切れる大きさにしてから使います（例 2000×1567 → 2000×1566）。
+   - **`--crop` は GT のファイルを上書きします。** 元の画像を残したいときは、先にコピーしておいてください。
+     TIFF の地理情報などのタグは、上書きすると消えます。
+
    低解像度画像がすでにあれば、GT と同じ名前で `dataset/test/lq/` に置けば、この手順は要りません。
 
 3. **超解像する**
