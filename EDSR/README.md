@@ -16,6 +16,7 @@ ONNX に書き出して推論するためのフォルダです。
 | `edsr_fine_tuning_realesrgan.py` | Real-ESRGAN と同じ劣化で LR を作りながら学習するスクリプト（`edsr_fine_tuning2.py` の学習を呼び出す） |
 | `make_degraded_lr.py` | HR フォルダを Real-ESRGAN と同じ劣化で LR にして、別フォルダに保存する |
 | `realesrgan_degradation.py` | Real-ESRGAN の劣化処理の本体（上の 2 つから呼ばれる） |
+| `export_edsr_onnx.py` | 学習で保存された `.pt`（`checkpoint_epoch10.pt` など）を、学習せずに ONNX に書き出す |
 
 ## 実行の進め方
 
