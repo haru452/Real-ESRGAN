@@ -13,6 +13,9 @@ ONNX に書き出して推論するためのフォルダです。
 | `edsr_val.py` | 検証（val）の処理。val の損失・PSNR の計算、CSV とグラフの保存（学習スクリプトから呼ばれる） |
 | `edsr_compare.py` | 比較画像（LR / bicubic / 学習前 / 学習後 / 正解）を作る処理（学習スクリプトから呼ばれる） |
 | `infer_edsr.py` | 書き出した ONNX で超解像する推論スクリプト（onnxruntime を使用） |
+| `edsr_fine_tuning_realesrgan.py` | Real-ESRGAN と同じ劣化で LR を作りながら学習するスクリプト（`edsr_fine_tuning2.py` の学習を呼び出す） |
+| `make_degraded_lr.py` | HR フォルダを Real-ESRGAN と同じ劣化で LR にして、別フォルダに保存する |
+| `realesrgan_degradation.py` | Real-ESRGAN の劣化処理の本体（上の 2 つから呼ばれる） |
 
 ## 実行の進め方
 
@@ -116,6 +119,27 @@ wget https://cv.snu.ac.kr/research/EDSR/models/edsr_baseline_x2-1bc95232.pt   # 
 **LR を自分で用意する場合:** `--lr_dir` に LR 画像のフォルダを指定すると、自動縮小の代わりに
 **HR と同じファイル名** の画像を組にして使います。LR の大きさは HR のちょうど 1/倍率にしてください
 （ずれていると切り出し位置がずれます）。
+
+### Real-ESRGAN と同じ劣化で学習する（任意）
+
+bicubic 縮小の代わりに、Real-ESRGAN と同じ 2 段階の劣化（ぼかし・リサイズ・ノイズ・sinc フィルタ）で LR を作れます。
+設定値は `options/train_realesrgan_x2plus.yml` と同じです。このリポジトリの Real-ESRGAN に合わせて、JPEG は既定で入れません（`--use_jpeg` で入れる）。
+val は、どちらの方法でも今まで通り bicubic です。
+
+**(A) 学習しながら毎回劣化させる:** パッチごとに劣化が変わるので、種類が多くなります。
+
+```bash
+python EDSR/edsr_fine_tuning_realesrgan.py     --weight_path ./edsr_x2-0edfb8a3.pt --hr_dir ./dataset/high6 --val_hr_dir ./dataset/val/gt     --scale 2 --patch_size 48 --batch_size 16 --epochs 30 --lr 1e-4 --log_dir ./runs/edsr_realesrgan_deg
+```
+
+`edsr_fine_tuning2.py` の引数はそのまま使えます（`--lr_dir` を除く）。追加の引数は `--deg_yml`、`--use_jpeg`、`--gt_usm`（正解を USM で強調する）、`--deg_margin` です。
+
+**(B) 先に劣化させた LR をフォルダに保存し、`--lr_dir` で使う:** 1 枚につき劣化は 1 通りです。同じ `--seed` なら同じ LR になります。
+
+```bash
+python EDSR/make_degraded_lr.py --hr_dir ./dataset/high6 --out_dir ./dataset/high6_lr_realesrgan --scale 2 --seed 0
+python EDSR/edsr_fine_tuning2.py ... --hr_dir ./dataset/high6 --lr_dir ./dataset/high6_lr_realesrgan
+```
 
 **学習の設定:** 損失は L1、最適化は Adam です（公式 EDSR と同じ）。
 `.pt` から始める場合、入力の平均を引く層（MeanShift）は固定され、学習されません。
