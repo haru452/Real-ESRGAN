@@ -1,0 +1,45 @@
+# 月面画像 (dataset/high6) に合わせた、弱めの劣化設定。
+# edsr_fine_tuning_realesrgan.py / make_degraded_lr.py の --deg_yml に渡して使う。
+#
+# ねらい: 「HR を劣化させて作った LR」が「縮小する前の元画像」と同じくらいの
+#         ぼけとノイズになるようにする (本番では元画像をそのまま超解像するため)。
+#
+# 根拠 (2026-11-11、high6 の C7 から撮影元 17 個 × 6 枚 = 102 枚を測定):
+#   - 元画像のノイズの標準偏差: 2.3 ~ 6.7 (中央値 3.3、0-255 のスケール)
+#   - 縮小前に必要なぼかし: ガウス σ = 1.3 ~ 1.8 画素 (中央値 1.6、HR の画素で)
+#   - 画像は白黒 (RGB の 3 チャンネルが同じ値)
+# Real-ESRGAN の既定 (ぼかし σ 最大 3 を 2 回、ノイズ最大 30、0.15 倍までの縮小、sinc) よりずっと弱い。
+
+# ---- 1 段目: ぼかしだけ (HR の大きさのまま) ----
+kernel_list: ['iso', 'aniso', 'generalized_iso', 'generalized_aniso', 'plateau_iso', 'plateau_aniso']
+kernel_prob: [0.60, 0.30, 0.05, 0.05, 0.0, 0.0]
+sinc_prob: 0
+blur_sigma: [1.0, 2.2]        # 測定値 1.3 ~ 1.8 を少し広げた範囲
+betag_range: [0.8, 2]
+betap_range: [1, 2]
+resize_prob: [0, 0, 1]        # up, down, keep: ランダムな拡大縮小はしない
+resize_range: [1, 1]
+gaussian_noise_prob: 1        # 1 段目のノイズは 0 (縮小すると消えてしまうので、縮小後の 2 段目で入れる)
+noise_range: [0, 0]
+poisson_scale_range: [0, 0]
+gray_noise_prob: 1
+jpeg_range: [30, 95]          # --use_jpeg を付けたときだけ使われる
+
+# ---- 2 段目: 1/scale に縮小してからノイズ ----
+second_blur_prob: 0
+kernel_list2: ['iso', 'aniso', 'generalized_iso', 'generalized_aniso', 'plateau_iso', 'plateau_aniso']
+kernel_prob2: [0.60, 0.30, 0.05, 0.05, 0.0, 0.0]
+sinc_prob2: 0
+blur_sigma2: [0.2, 1.0]
+betag_range2: [0.8, 2]
+betap_range2: [1, 2]
+resize_prob2: [0, 0, 1]       # keep: ちょうど 1/scale に縮小する (area / bilinear / bicubic はランダム)
+resize_range2: [1, 1]
+gaussian_noise_prob2: 0.5     # 半分はガウスノイズ、半分は明るさに比例するポアソンノイズ
+noise_range2: [1.5, 7]        # 測定値 2.3 ~ 6.7 を少し広げた範囲
+poisson_scale_range2: [0.15, 0.6]
+gray_noise_prob2: 1           # 白黒画像なので、ノイズも 3 チャンネル共通にする
+jpeg_range2: [30, 95]
+
+# ---- 最後の sinc フィルタ (リンギング) は入れない ----
+final_sinc_prob: 0
