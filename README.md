@@ -50,6 +50,7 @@ Real-ESRGAN は高解像度画像に「ぼかし → リサイズ → ノイズ 
 | `finetune_realesrgan_x4plus.yml` | 変更 | x4 GAN のファインチューニング（公式の `RealESRNet_x4plus.pth` から開始）。データを `dataset/` に、seed 1、batch 4、150k iter（130k で学習率半減）、1k iter ごとに保存 |
 | `finetune_realesrnet_x2plus.yml` | 新規 | x2 ESRNet。公式の `RealESRGAN_x2plus.pth` から開始（ESRNet x2 の重みは非公開のため）。100k iter、検証データあり |
 | `finetune_realesrgan_x2plus.yml` | 新規 | x2 GAN のファインチューニング（公式の `RealESRGAN_x2plus.pth` と `RealESRGAN_x2plus_netD.pth` から開始）。150k iter（125k で学習率半減）、batch 4、検証データあり |
+| `finetune_realesrgan_x2plus_mild.yml` | 新規 | 上の x2 GAN 設定のコピー。劣化を EDSR / HAT と同じ弱い劣化（`EDSR/degradation_lunar_mild.yml` と同じ値）にし、学習画像を `dataset/high6`、val の LR を bicubic、50k iter にしたもの。モデルは `realesrgan/models/realesrgan_mild_model.py`（元のモデルのコピーで、劣化と正解を USM なしの GT から作る）。使う前に `python scripts/generate_meta_info.py --input dataset/high6 --root dataset --meta_info dataset/meta_info_high6.txt` と `python scripts/generate_val_lq.py --mode bicubic --scale 2 --lq dataset/val/lq_bicubic` を実行する |
 | `train_realesrgan_x4plus.yml` | 変更 | データを `dataset/` に変更 |
 | `train_realesrgan_x2plus.yml` | 変更 | Colab の Drive 上データを使用、gt_size 128、batch 4、worker 2、133.2k iter |
 
@@ -153,6 +154,68 @@ dataset/
 
 - 途中経過: `net_g_<iter数>.pth`（例: `net_g_150000.pth`）
 - 学習が最後まで終わったとき: `net_g_latest.pth`
+
+---
+
+## EDSR / HAT と同じ弱い劣化で学習する（`finetune_realesrgan_x2plus_mild.yml`）
+
+卒論で CNN（EDSR）・GAN（Real-ESRGAN）・Transformer（HAT）を比べるため、劣化を 3 モデルでそろえた x2 の学習です。
+上の `finetune_realesrgan_x2plus.yml` は Real-ESRGAN 既定の強い劣化なので、モデルの違いと劣化の違いを区別できません。
+
+### 元の学習との違い
+
+| | 元（`finetune_realesrgan_x2plus.yml`） | mild（`finetune_realesrgan_x2plus_mild.yml`） |
+|---|---|---|
+| 劣化 | 強い（ぼかし最大 3 を 2 回、ノイズ最大 30、ランダムな拡大縮小、sinc） | `EDSR/degradation_lunar_mild.yml` と同じ（ぼかし σ 1.0〜2.2 → ちょうど 1/2 に縮小 → ノイズ σ 1.5〜7、白黒） |
+| 劣化と正解の元画像 | USM（輪郭強調）をかけた GT | USM なしの GT（EDSR と同じ） |
+| 学習画像 | `meta_infometa_info_imagesmultiscale.txt` の一覧 | `dataset/high6`（EDSR と同じ） |
+| 学習中の val の LR | `dataset/val/lq`（強い劣化） | `dataset/val/lq_bicubic`（bicubic 縮小） |
+| 長さ | 150k iter（125k で学習率半分） | 50k iter（40k で学習率半分） |
+| モデル | `realesrgan/models/realesrgan_model.py` | `realesrgan/models/realesrgan_mild_model.py`（元のコピー。劣化の元画像だけ変更） |
+
+ネットワーク、損失（L1 + perceptual + GAN）、学習率、batch、gt_size は同じです。損失は各モデルの特徴なのでそろえません。
+
+### 手順（サーバーで実行）
+
+1. 学習画像の一覧を作る（EDSR と同じ `dataset/high6` を使う）
+
+   ```bash
+   python scripts/generate_meta_info.py \
+     --input dataset/high6 \
+     --root dataset \
+     --meta_info dataset/meta_info_high6.txt
+   ```
+
+2. 学習中の val 用に、bicubic で縮小した LR を作る
+
+   ```bash
+   python scripts/generate_val_lq.py --mode bicubic --scale 2 \
+     --gt dataset/val/gt --lq dataset/val/lq_bicubic
+   ```
+
+3. 公式の重み（`RealESRGAN_x2plus.pth`、`RealESRGAN_x2plus_netD.pth`）が `experiments/pretrained_models/` にあることを確認する
+4. 学習する
+
+   ```bash
+   python realesrgan/train.py -opt options/finetune_realesrgan_x2plus_mild.yml
+   ```
+
+5. 重みは `experiments/finetune_RealESRGANx2plus_mild/models/` に保存される。推論は下の「推論（超解像の実行）」と同じで、`--model_path` をこのフォルダの重みにする
+
+   ```bash
+   python inference_realesrgan.py -n RealESRGAN_x2plus -i ./inputs --outscale 2 \
+     --model_path experiments/finetune_RealESRGANx2plus_mild/models/net_g_latest.pth \
+     --output ./result/RealESRGAN_mild
+   ```
+
+6. 評価ノートブックの出力フォルダを `./result/RealESRGAN_mild` に差し替えて、3 モデルの比較をやり直す
+
+### 注意
+
+- **学習の長さの目安:** EDSR（30 エポック、1 エポック = high6 の枚数 N パッチ）と見た画素数をそろえると、`total_iter ≒ 1.05 × N`。前回は val が 10k iter 付近で最高だったので 50k にしてある。変えるときは yml の `total_iter` と `milestones` を直す
+- **正解の USM:** 正解画像も EDSR / HAT とそろえるため、`l1_gt_usm` と `percep_gt_usm` を `False` にしてある。公式どおり USM をかけた正解で学習したいときは `True` に戻す（劣化の元画像は `deg_from_usm` で切り替え）
+- **学習中の val の値:** bicubic は torch 版で、EDSR の学習中の val（cv2 版）とわずかに違う。学習中の値は推移を見る目安にして、3 モデルの比較は評価ノートブックで行う
+- **劣化を弱くした影響:** 評価の LR（bicubic）に近くなるので、3 モデルとも点数が上がりやすい。AI どうしの比較は公平になるが、Drizzle との比較では AI が実際より良く出やすい。卒論では限界として書く
 
 ---
 
