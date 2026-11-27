@@ -107,6 +107,7 @@ wget https://cv.snu.ac.kr/research/EDSR/models/edsr_baseline_x2-1bc95232.pt   # 
    - 16bit の TIFF は 8bit に、白黒画像は 3 チャンネルに変換される（OpenCV の `IMREAD_COLOR`）
 2. HR 画像の縦横を倍率の倍数に切りそろえる（LR と位置がずれないように）
 3. HR を **bicubic で 1/倍率に縮小** して LR を作る（OpenCV の `cv2.resize(..., INTER_CUBIC)`）
+   - `--downsample bilinear` を付けると bilinear（`INTER_LINEAR`）で縮小する。val の LR を自動で作るときも同じ方法になる
    - ぼかしやノイズ、JPEG 圧縮は加えない。Real-ESRGAN の学習データ（劣化をランダムに加える）とはここが違う
 4. LR から `--patch_size`（初期値 48）四方を、ランダムな位置で切り出す。HR からは同じ位置を倍率倍の大きさで切り出す
    - 例: x2・patch_size 48 なら、LR 48×48 と HR 96×96 の組
@@ -179,7 +180,8 @@ python EDSR/edsr_fine_tuning2.py \
 | --- | --- | --- |
 | `--weight_path` | （必須） | 元の重み。`.pt`（公式）か `.onnx` |
 | `--hr_dir` | （必須） | 学習用 HR 画像のフォルダ |
-| `--lr_dir` | なし | 学習用 LR 画像のフォルダ。省略すると bicubic で自動作成 |
+| `--lr_dir` | なし | 学習用 LR 画像のフォルダ。省略すると `--downsample` の方法で自動作成 |
+| `--downsample` | bicubic | LR を自動作成するときの縮小方法（`bicubic` / `bilinear`）。学習用と val の両方に効く。基準の「bicubic で拡大しただけ」の値は bicubic 拡大のまま |
 | `--scale` | 2 | 倍率（2 / 3 / 4） |
 | `--patch_size` | 48 | LR 側の切り出しサイズ（HR 側はこの倍率倍） |
 | `--batch_size` | 8 | 1 回の更新で使うパッチ数 |
@@ -214,7 +216,7 @@ PSNR / SSIM の計算方法は Real-ESRGAN 側と同じ（RGB・0〜255・周囲
 | 引数 | 初期値 | 説明 |
 | --- | --- | --- |
 | `--val_hr_dir` | なし | val の HR 画像のフォルダ。付けると val を行う |
-| `--val_lr_dir` | なし | val の LR 画像のフォルダ（同じファイル名で組にする）。省略すると学習と同じ bicubic で作る |
+| `--val_lr_dir` | なし | val の LR 画像のフォルダ（同じファイル名で組にする）。省略すると学習と同じ `--downsample` の方法で作る |
 | `--val_every` | 1 | 何エポックごとに val を行うか |
 | `--val_max_images` | 全部 | val に使う枚数。名前順に並べた中から **等間隔に** 選ぶ（先頭だけだと同じ撮影帯に偏るため）。時間短縮用 |
 | `--log_dir` | `.` | 結果の保存先 |

@@ -5,7 +5,7 @@ EDSR を Real-ESRGAN と同じ劣化で学習する (学習しながら毎回 LR
 edsr_fine_tuning2.py の学習ループをそのまま使い、学習用 LR の作り方だけを
 bicubic 縮小から Real-ESRGAN 方式の 2 段階劣化に差し替えます。
 パッチごとに毎回ちがう劣化になるので、make_degraded_lr.py で作った固定の LR より種類が多くなります。
-val は今まで通り bicubic です (--val_lr_dir を省略した場合)。
+val は今まで通り単純な縮小です (--val_lr_dir を省略した場合。--downsample bilinear で bilinear にもできます)。
 
     python EDSR/edsr_fine_tuning_realesrgan.py \
         --weight_path ./edsr_x2-0edfb8a3.pt \
@@ -41,7 +41,9 @@ class RealESRGANPatchDataset(base.SRPatchDataset):
 
     config = {}  # main() で設定する。__init__ でインスタンスに写すので、DataLoader の子プロセスにも届く
 
-    def __init__(self, hr_dir, lr_dir, scale, patch_size, length_per_epoch=1000):
+    def __init__(self, hr_dir, lr_dir, scale, patch_size, length_per_epoch=1000,
+                 downsample='bicubic'):
+        # downsample は学習用 LR には使わない (val の LR を自動で作るときだけ効く)
         if lr_dir is not None:
             raise ValueError('--lr_dir とは一緒に使えません (LR はこのスクリプトが作ります)')
         super().__init__(hr_dir, None, scale, patch_size, length_per_epoch)

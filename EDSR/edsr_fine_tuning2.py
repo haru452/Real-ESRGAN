@@ -38,7 +38,14 @@ EDSR ファインチューニングスクリプト（.pt / .onnx 両対応版）
 
         python EDSR/edsr_fine_tuning2.py ... --val_hr_dir ./dataset/val/gt --val_max_images 200
 
-    --val_lr_dir を省略すると、学習と同じ bicubic 縮小で val の LR を作ります。
+    --val_lr_dir を省略すると、学習と同じ縮小方法で val の LR を作ります。
+
+縮小方法 (--downsample):
+    LR を自動で作るときの縮小は、既定の bicubic のほかに bilinear も選べます。
+    学習用 LR と val の LR (--lr_dir / --val_lr_dir を省略したとき) の両方に効きます。
+    基準の「bicubic で拡大しただけ」の値は、どちらの場合も bicubic 拡大のままです。
+
+        python EDSR/edsr_fine_tuning2.py ... --downsample bilinear
     --val_max_images は時間短縮用 (名前順で先頭から指定枚数。省略で全部)。
 
 入力の前提: RGB / float32 / 0-255 (正規化なし)。EDSR-PyTorch・ailia とも同じ。
@@ -58,7 +65,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
 from edsr_compare import Comparer
-from edsr_val import ValLogger, ValSet, evaluate, evaluate_bicubic
+from edsr_val import DOWNSAMPLE, ValLogger, ValSet, downsample, evaluate, evaluate_bicubic
 
 
 def format_seconds(sec):
@@ -200,6 +207,8 @@ def get_args():
     parser.add_argument('--hr_dir', required=True, help='高解像度(正解)画像が入ったディレクトリ')
     parser.add_argument('--lr_dir', default=None,
                         help='低解像度画像のディレクトリ (省略時は hr_dir から自動生成)')
+    parser.add_argument('--downsample', choices=sorted(DOWNSAMPLE), default='bicubic',
+                        help='LR を自動生成するときの縮小方法 (学習用と val の両方に効く)')
     parser.add_argument('--scale', type=int, choices=[2, 3, 4], default=2)
     parser.add_argument('--patch_size', type=int, default=48,
                         help='LR側のパッチサイズ (HR側は patch_size * scale)')
@@ -217,7 +226,7 @@ def get_args():
     parser.add_argument('--val_hr_dir', default=None,
                         help='val の高解像度(正解)画像フォルダ。指定すると過学習チェックを行う')
     parser.add_argument('--val_lr_dir', default=None,
-                        help='val の低解像度画像フォルダ (同名で組にする。省略時は bicubic で自動生成)')
+                        help='val の低解像度画像フォルダ (同名で組にする。省略時は --downsample の方法で自動生成)')
     parser.add_argument('--val_every', type=int, default=1, help='何エポックごとに val を行うか')
     parser.add_argument('--val_max_images', type=int, default=None,
                         help='val に使う最大枚数 (名前順で先頭から。省略時は全部)')
@@ -253,15 +262,17 @@ class SRPatchDataset(Dataset):
     """
     HR画像から HRパッチ / LRパッチ のペアを切り出す。
     - lr_dir が指定されていれば、同名ファイルのペアとして扱う
-    - 指定がなければ、HR を bicubic で 1/scale にダウンサンプルして LR を生成する
+    - 指定がなければ、HR を downsample (bicubic / bilinear) で 1/scale に縮小して LR を生成する
     値は 0-255 の float (RGB) のまま扱う。
     """
 
     IMG_EXTS = ('*.png', '*.jpg', '*.jpeg', '*.tif', '*.tiff', '*.bmp')
 
-    def __init__(self, hr_dir, lr_dir, scale, patch_size, length_per_epoch=1000):
+    def __init__(self, hr_dir, lr_dir, scale, patch_size, length_per_epoch=1000,
+                 downsample='bicubic'):
         self.scale = scale
         self.patch_size = patch_size
+        self.downsample = downsample
         self.length_per_epoch = length_per_epoch
 
         self.hr_paths = []
@@ -294,12 +305,8 @@ class SRPatchDataset(Dataset):
             lr_img = cv2.imread(self.lr_paths[fname], cv2.IMREAD_COLOR)
             lr_img = cv2.cvtColor(lr_img, cv2.COLOR_BGR2RGB).astype(np.float32)
         else:
-            h, w = hr_img.shape[:2]
             # HR を scale の倍数に切りそろえてから縮小 (位置ずれ防止)
-            h, w = h - h % self.scale, w - w % self.scale
-            hr_img = hr_img[:h, :w]
-            lr_img = cv2.resize(hr_img, (w // self.scale, h // self.scale),
-                                interpolation=cv2.INTER_CUBIC)
+            hr_img, lr_img = downsample(hr_img, self.scale, self.downsample)
         return hr_img, lr_img
 
     def __getitem__(self, idx):
@@ -378,7 +385,10 @@ def main():
         scale=args.scale,
         patch_size=args.patch_size,
         length_per_epoch=length_per_epoch,
+        downsample=args.downsample,
     )
+    if args.lr_dir is None:
+        print(f"  学習用 LR の縮小方法: {args.downsample}")
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True,
                         num_workers=args.num_workers, drop_last=True)
 
@@ -399,8 +409,9 @@ def main():
     best_psnr, best_epoch = -float('inf'), 0
     best_path = os.path.join(args.log_dir, 'checkpoint_best.pt')
     if args.val_hr_dir:
-        val_set = ValSet(args.val_hr_dir, args.val_lr_dir, args.scale, args.val_max_images)
-        lr_src = args.val_lr_dir or 'bicubic で自動生成'
+        val_set = ValSet(args.val_hr_dir, args.val_lr_dir, args.scale, args.val_max_images,
+                         downsample=args.downsample)
+        lr_src = args.val_lr_dir or f'{args.downsample} で自動生成'
         print(f"  val: {len(val_set)} 枚 (LR: {lr_src}) を {args.val_every} エポックごとに評価")
         # 超解像しない場合 (bicubic で拡大しただけ) の値を基準として記録
         bic = evaluate_bicubic(val_set)

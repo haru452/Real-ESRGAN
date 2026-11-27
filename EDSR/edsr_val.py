@@ -20,6 +20,18 @@ import torch
 
 IMG_EXTS = ('*.png', '*.jpg', '*.jpeg', '*.tif', '*.tiff', '*.bmp')
 
+# LR を作るときの縮小方法 (--downsample で選ぶ)
+DOWNSAMPLE = {'bicubic': cv2.INTER_CUBIC, 'bilinear': cv2.INTER_LINEAR}
+
+
+def downsample(hr, scale, method='bicubic'):
+    """HR を scale の倍数に切りそろえてから 1/scale に縮小し、(切りそろえた HR, LR) を返す"""
+    h, w = hr.shape[:2]
+    h, w = h - h % scale, w - w % scale
+    hr = hr[:h, :w]
+    lr = cv2.resize(hr, (w // scale, h // scale), interpolation=DOWNSAMPLE[method])
+    return hr, lr
+
 
 def _read_rgb(path):
     img = cv2.imread(path, cv2.IMREAD_COLOR)  # 学習時と同じ読み方 (16bit も 8bit になる)
@@ -47,12 +59,13 @@ class ValSet:
     """
     val の (LR, HR) の組を読む。
     - lr_dir を指定: 同じファイル名の画像を組にする (例: dataset/val/lq と dataset/val/gt)
-    - lr_dir を省略: HR を学習時と同じ bicubic で縮小して LR を作る
+    - lr_dir を省略: HR を学習時と同じ方法 (downsample: bicubic / bilinear) で縮小して LR を作る
     max_images を指定すると、名前順に並べた中から等間隔に選ぶ。
     """
 
-    def __init__(self, hr_dir, lr_dir, scale, max_images=None):
+    def __init__(self, hr_dir, lr_dir, scale, max_images=None, downsample='bicubic'):
         self.scale = scale
+        self.downsample = downsample
         self.lr_dir = lr_dir
         self.hr_paths = pick_evenly(list_images(hr_dir), max_images)
         if not self.hr_paths:
@@ -77,10 +90,7 @@ class ValSet:
         if self.lr_dir is not None:
             lr = _read_rgb(self.lr_paths[os.path.basename(self.hr_paths[i])])
         else:
-            h, w = hr.shape[:2]
-            h, w = h - h % s, w - w % s
-            hr = hr[:h, :w]
-            lr = cv2.resize(hr, (w // s, h // s), interpolation=cv2.INTER_CUBIC)
+            hr, lr = downsample(hr, s, self.downsample)
         # 出力サイズ (LR × scale) に HR をそろえる
         hr = hr[:lr.shape[0] * s, :lr.shape[1] * s]
         return lr, hr
